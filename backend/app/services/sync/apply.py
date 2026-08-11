@@ -7,6 +7,7 @@ Two-pass (dependency-ordered) apply with per-operation isolation:
   previous state written to ``case_events`` as an audit trail.
 """
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
@@ -19,6 +20,7 @@ from ...models import (
     Ambulance,
     CaseEvent,
     Device,
+    EcgTracing,
     EmergencyCase,
     GpsPoint,
     Hospital,
@@ -26,6 +28,7 @@ from ...models import (
     Vital,
 )
 from ...models.enums import CaseEventType, CaseSeverity, CaseStatus
+from ...schemas.ecg import EcgSyncPayload
 from ...schemas.gps import GpsCreate
 from ...schemas.patient import PatientCreate
 from ...schemas.sync import SyncOp
@@ -40,7 +43,16 @@ _ENTITY_ORDER = {
     "vital": 2,
     "event": 2,
     "gps": 2,
+    "ecg": 2,
 }
+
+_IMAGE_SIZE_CAP = 8 * 1024 * 1024  # 8 MB decoded
+_IMAGE_SIGNATURES = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+)
+_WEBP_RIFF = b"RIFF"
+_WEBP_WEBP = b"WEBP"
 
 
 class OpRejected(Exception):
@@ -346,6 +358,98 @@ def _apply_gps(db: Session, user, op: SyncOp) -> None:
     )
 
 
+def _decode_image(value: str, label: str) -> bytes:
+    """Decode a base64 image payload with size + signature checks."""
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise OpRejected(f"invalid base64 {label}") from None
+    if len(data) == 0:
+        raise OpRejected(f"empty {label} image")
+    if len(data) > _IMAGE_SIZE_CAP:
+        raise OpRejected(f"{label} image exceeds {_IMAGE_SIZE_CAP // (1024 * 1024)} MB")
+    if data.startswith(_WEBP_RIFF) and data[8:12] == _WEBP_WEBP:
+        return data
+    for signature, _fmt in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return data
+    raise OpRejected(f"{label} is not a recognized image (jpeg/png/webp)")
+
+
+def _valid_waveform(waveform) -> bool:
+    if not isinstance(waveform, dict):
+        return False
+    channels = waveform.get("channels")
+    if not isinstance(channels, list) or not channels:
+        return False
+    for channel in channels:
+        if not isinstance(channel, dict):
+            return False
+        points = channel.get("points")
+        if not isinstance(points, list) or len(points) < 2:
+            return False
+        for point in points:
+            if not (isinstance(point, list) and len(point) == 2):
+                return False
+    return True
+
+
+def _apply_ecg(db: Session, user, op: SyncOp) -> None:
+    device = _device_or_reject(db, user, op)
+    _validate_hlc_device(op)
+    case = _get_case(db, op.data.get("case_id"), user)
+    if case.status == CaseStatus.closed:
+        raise OpRejected("case is closed")
+    if db.get(EcgTracing, op.id) is not None:
+        raise OpRejected("duplicate")
+
+    try:
+        data = EcgSyncPayload(**op.data)
+    except ValidationError as exc:
+        raise OpRejected(f"validation failed: {exc.errors()[0]['msg']}") from None
+
+    if not _valid_waveform(data.waveform):
+        raise OpRejected("waveform must contain at least one channel with points")
+    original = _decode_image(data.image_original, "original")
+    normalized = (
+        _decode_image(data.image_normalized, "normalized")
+        if data.image_normalized
+        else None
+    )
+
+    db.add(
+        EcgTracing(
+            id=op.id,
+            case_id=case.id,
+            captured_by_id=user.id,
+            captured_at=data.captured_at or _utcnow(),
+            source=data.source,
+            lead_count=data.lead_count,
+            paper_speed=data.paper_speed,
+            image_original=original,
+            image_normalized=normalized,
+            waveform=data.waveform,
+            quality=data.quality,
+            notes=data.notes,
+            device_id=device.id,
+            hlc=op.hlc,
+            created_at=_utcnow(),
+        )
+    )
+    _add_audit_event(
+        db,
+        case,
+        CaseEventType.ecg_added,
+        device,
+        op.hlc,
+        {
+            "ecg_id": str(op.id),
+            "lead_count": data.lead_count,
+            "captured_at": (data.captured_at or _utcnow()).isoformat(),
+        },
+    )
+
+
 def _apply_event(db: Session, user, op: SyncOp) -> None:
     device = _device_or_reject(db, user, op)
     _validate_hlc_device(op)
@@ -417,6 +521,7 @@ _APPLY = {
     "vital": _apply_vital,
     "event": _apply_event,
     "gps": _apply_gps,
+    "ecg": _apply_ecg,
 }
 
 
@@ -458,6 +563,20 @@ def apply_batch(db: Session, user, ops: list[SyncOp]) -> ApplyOutcome:
                 point = db.get(GpsPoint, op.id)
                 if point is not None:
                     outcome.gps.append(point)
+            if op.entity == "ecg":
+                tracing = db.get(EcgTracing, op.id)
+                if tracing is not None:
+                    event = (
+                        db.query(CaseEvent)
+                        .filter_by(
+                            case_id=tracing.case_id,
+                            event_type=CaseEventType.ecg_added,
+                        )
+                        .order_by(CaseEvent.created_at.desc())
+                        .first()
+                    )
+                    if event is not None:
+                        outcome.events.append(event)
         except OpRejected as exc:
             savepoint.rollback()
             outcome.skipped.append(
@@ -512,6 +631,19 @@ def _event_data(event: CaseEvent) -> dict:
         "case_id": str(event.case_id),
         "event_type": event.event_type.value,
         "payload": event.payload,
+    }
+
+
+def _ecg_data(ecg: EcgTracing) -> dict:
+    return {
+        "case_id": str(ecg.case_id),
+        "captured_at": ecg.captured_at.isoformat() if ecg.captured_at else None,
+        "source": ecg.source,
+        "lead_count": ecg.lead_count,
+        "paper_speed": ecg.paper_speed,
+        "waveform": ecg.waveform,
+        "quality": ecg.quality,
+        "notes": ecg.notes,
     }
 
 
@@ -610,6 +742,30 @@ def pull_changes(
                     "device_id": str(event.device_id) if event.device_id else None,
                     "hlc": event.hlc,
                     "data": _event_data(event),
+                }
+            )
+
+    if entity in (None, "ecg"):
+        # Metadata + waveform only; raw image bytes are served via REST.
+        stmt = (
+            select(EcgTracing)
+            .join(EmergencyCase, EcgTracing.case_id == EmergencyCase.id)
+            .where(EcgTracing.hlc.isnot(None))
+        )
+        if since:
+            stmt = stmt.where(EcgTracing.hlc > since)
+        if is_paramedic:
+            stmt = stmt.where(EmergencyCase.created_by_id == user.id)
+        if case_id is not None:
+            stmt = stmt.where(EcgTracing.case_id == case_id)
+        for ecg in db.scalars(stmt):
+            changes.append(
+                {
+                    "entity": "ecg",
+                    "id": str(ecg.id),
+                    "device_id": str(ecg.device_id) if ecg.device_id else None,
+                    "hlc": ecg.hlc,
+                    "data": _ecg_data(ecg),
                 }
             )
 

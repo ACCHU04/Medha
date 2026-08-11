@@ -94,6 +94,12 @@ class EmergencyCase(Base):
         cascade="all, delete-orphan",
         order_by="GpsPoint.recorded_at",
     )
+    ecg_tracings = relationship(
+        "EcgTracing",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="EcgTracing.captured_at",
+    )
 
     __table_args__ = (
         Index("ix_cases_patient_id", "patient_id"),

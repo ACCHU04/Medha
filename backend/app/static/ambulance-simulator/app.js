@@ -39,6 +39,7 @@ const state = {
   events: [],
   route: null,
   ws: null,
+  ecg: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -573,6 +574,7 @@ async function createCase(ev) {
     $("case-id").textContent = state.case.id;
     $("dest-select").disabled = false;
     $("start-btn").disabled = false;
+    updateEcgSend();
     resetEncounterUI();
     connectEventsWs();
     showInfo("Emergency case created");
@@ -977,6 +979,228 @@ function drawMap() {
   ctx.stroke();
 }
 
+// ---- Paper ECG digitization (Feature 4) ----
+
+const ECG_MAX_DIM = 1600;
+
+function ecgCanvasToB64(canvas) {
+  return canvas.toDataURL("image/jpeg", 0.85).replace(/^data:image\/jpeg;base64,/, "");
+}
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    if (typeof createImageBitmap === "function") {
+      createImageBitmap(file).then(resolve).catch(() => loadImageViaUrl(file).then(resolve, reject));
+    } else {
+      loadImageViaUrl(file).then(resolve, reject);
+    }
+  });
+}
+
+function loadImageViaUrl(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("could not decode image")); };
+    img.src = url;
+  });
+}
+
+function drawToCanvas(source, maxDim) {
+  const canvas = $("ecg-canvas");
+  const scale = Math.min(1, maxDim / Math.max(source.width, source.height));
+  canvas.width = Math.max(1, Math.round(source.width * scale));
+  canvas.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  canvas.hidden = false;
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+function cropImageData(image, box) {
+  const out = new ImageData(box.w, box.h);
+  for (let y = 0; y < box.h; y++) {
+    for (let x = 0; x < box.w; x++) {
+      const si = ((box.y + y) * image.width + (box.x + x)) * 4;
+      const di = (y * box.w + x) * 4;
+      out.data[di] = image.data[si];
+      out.data[di + 1] = image.data[si + 1];
+      out.data[di + 2] = image.data[si + 2];
+      out.data[di + 3] = 255;
+    }
+  }
+  return out;
+}
+
+function normCanvasFromData(imageData) {
+  const canvas = document.createElement("canvas");
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  canvas.getContext("2d").putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function drawTracePreview(waveform) {
+  const canvas = $("ecg-trace");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const ch = waveform && waveform.channels && waveform.channels[0];
+  const pts = ch && ch.points;
+  canvas.hidden = !pts || pts.length < 2;
+  if (!pts || pts.length < 2) return;
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const minX = Math.min.apply(null, xs);
+  const maxX = Math.max.apply(null, xs);
+  const minY = Math.min.apply(null, ys);
+  const maxY = Math.max.apply(null, ys);
+  const pad = 10;
+  const plotW = canvas.width - pad * 2;
+  const plotH = canvas.height - pad * 2;
+  const sx = (x) => (maxX === minX ? pad + plotW / 2 : pad + ((x - minX) / (maxX - minX)) * plotW);
+  const sy = (y) => (maxY === minY ? pad + plotH / 2 : pad + (1 - (y - minY) / (maxY - minY)) * plotH);
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(sx(p[0]), sy(p[1]));
+    else ctx.lineTo(sx(p[0]), sy(p[1]));
+  });
+  ctx.stroke();
+}
+
+function renderEcgStatus() {
+  const el = $("ecg-status");
+  const q = state.ecg && state.ecg.quality;
+  const w = state.ecg && state.ecg.waveform;
+  el.className = "hint";
+  if (!q) {
+    el.textContent = "Capture a paper ECG photo (JPEG/PNG) to digitize it.";
+    return;
+  }
+  const qLabel = q.checks_passed ? "quality OK" : "quality WARN (" + q.warnings.join(", ") + ")";
+  if (!w) {
+    el.textContent = "No ECG grid detected — " + qLabel + ". Try a flatter, well-lit photo.";
+    el.className = "hint warn";
+    return;
+  }
+  const ch = w.channels[0];
+  const grid = w.grid || {};
+  el.textContent = "Grid " + grid.mm_per_px_x + " px/mm · " + ch.points.length + " samples · " + qLabel;
+  el.className = "hint sync-ok";
+}
+
+function updateEcgSend() {
+  const ok = state.case && state.ecg && state.ecg.waveform && state.ecg.quality && state.ecg.quality.checks_passed;
+  $("ecg-send-btn").disabled = !ok;
+}
+
+function processEcgImage(image) {
+  const quality = window.EcgDigitize.estimateQuality(image);
+  const gridBox = window.EcgDigitize.detectGridBox(image);
+  state.ecg = { original: $("ecg-canvas"), normalized: null, quality, waveform: null, gridBox };
+  if (gridBox) {
+    const cropped = cropImageData(image, gridBox);
+    const scale = window.EcgDigitize.estimateGridScale(cropped, { x: 0, y: 0, w: gridBox.w, h: gridBox.h });
+    const mmpx = scale.mm_per_px_x > 0 ? scale.mm_per_px_x : 1;
+    const waveform = window.EcgDigitize.extractTrace(cropped, { mm_per_px: mmpx, sample_mm: 2, name: "I" });
+    state.ecg.normalized = normCanvasFromData(cropped);
+    state.ecg.waveform = waveform;
+  }
+  drawTracePreview(state.ecg.waveform);
+  renderEcgStatus();
+  updateEcgSend();
+}
+
+async function handleEcgFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  clearError();
+  try {
+    const source = await loadImageFromFile(file);
+    const image = drawToCanvas(source, ECG_MAX_DIM);
+    processEcgImage(image);
+  } catch (err) {
+    showError("ECG capture failed: " + err.message);
+  }
+}
+
+function putSampleToCanvas(variant) {
+  const sample = window.EcgSamples.makeSampleImage(variant);
+  const canvas = $("ecg-canvas");
+  canvas.width = sample.width;
+  canvas.height = sample.height;
+  const ctx = canvas.getContext("2d");
+  ctx.putImageData(new ImageData(sample.data, sample.width, sample.height), 0, 0);
+  canvas.hidden = false;
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+function loadSample() {
+  clearError();
+  try {
+    processEcgImage(putSampleToCanvas($("ecg-sample-select").value));
+  } catch (err) {
+    showError("Sample ECG load failed: " + err.message);
+  }
+}
+
+async function sendEcg() {
+  if (!state.case) { showError("Create an emergency case first"); return; }
+  const ecg = state.ecg || {};
+  if (!ecg.waveform || !ecg.quality) { showError("Capture and digitize an ECG first"); return; }
+  clearError();
+  const op = {
+    id: newUuid(),
+    op: "upsert",
+    entity: "ecg",
+    ref_id: state.case.id,
+    device_id: state.device.id,
+    hlc: state.clock.now(),
+    data: {
+      case_id: state.case.id,
+      captured_at: new Date().toISOString(),
+      source: "paper_photo",
+      lead_count: ecg.waveform.channels.length,
+      paper_speed: "25",
+      image_original: ecgCanvasToB64(ecg.original),
+      image_normalized: ecg.normalized ? ecgCanvasToB64(ecg.normalized) : null,
+      waveform: ecg.waveform,
+      quality: ecg.quality,
+      notes: null,
+    },
+  };
+  try {
+    await enqueueOp(op);
+  } catch (err) {
+    showError("ECG queue write failed: " + err.message);
+    return;
+  }
+  const status = $("ecg-status");
+  status.className = "hint sync-ok";
+  status.textContent = "Digitized ECG queued for sync.";
+  if (state.network === "online") {
+    const result = await runFlush();
+    if (result) {
+      const pending = await countPending();
+      if (result.skipped > 0) {
+        status.textContent = "Digitized ECG rejected by server.";
+        status.className = "hint warn";
+      } else if (pending === 0) {
+        status.textContent = "Digitized ECG synced to hospital.";
+      } else {
+        status.textContent = "ECG synced — " + pending + " op(s) still pending.";
+      }
+    }
+  } else {
+    await updateOfflineUI();
+  }
+}
+
 // ---- Live events websocket (Feature 3) ----
 
 function connectEventsWs() {
@@ -1057,6 +1281,9 @@ if (typeof document !== "undefined") {
   $("btn-transport").addEventListener("click", () => doTransition("transport_start"));
   $("btn-hospital").addEventListener("click", () => doTransition("hospital_arrival"));
   $("btn-close").addEventListener("click", () => doTransition("case_closed"));
+  $("ecg-file").addEventListener("change", handleEcgFile);
+  $("ecg-send-btn").addEventListener("click", sendEcg);
+  $("ecg-sample-btn").addEventListener("click", loadSample);
 }
 
 if (typeof module !== "undefined" && module.exports) {

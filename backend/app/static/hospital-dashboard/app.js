@@ -20,6 +20,7 @@ const state = {
   history: [],
   events: [],
   lastGps: null,
+  ecgs: [],
   ws: null,
   eventsWs: null,
   eventsReconnectTimer: null,
@@ -152,7 +153,9 @@ async function selectCase(caseId) {
   state.history = [];
   state.events = [];
   state.lastGps = null;
+  state.ecgs = [];
   renderTimeline();
+  renderEcgRecords();
   closeWebSocket();
   closeEventsWebSocket();
   renderQueue();
@@ -166,6 +169,7 @@ async function selectCase(caseId) {
     showError("Could not load vitals history: " + err.message);
   }
   loadTimeline(caseId);
+  loadEcgRecords(caseId);
   connectWebSocket(caseId);
   connectEventsWebSocket(caseId);
 }
@@ -463,6 +467,86 @@ function drawCharts() {
 
 window.addEventListener("resize", () => { if (state.selectedId) drawCharts(); });
 
+// ---- ECG records (Feature 4) ---- //
+
+function drawRecordTrace(canvas, channel) {
+  const ctx = canvas.getContext("2d");
+  const pts = channel && channel.points;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!pts || pts.length < 2) return;
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const minX = Math.min.apply(null, xs);
+  const maxX = Math.max.apply(null, xs);
+  const minY = Math.min.apply(null, ys);
+  const maxY = Math.max.apply(null, ys);
+  const pad = 10;
+  const plotW = canvas.width - pad * 2;
+  const plotH = canvas.height - pad * 2;
+  const sx = (x) => (maxX === minX ? pad + plotW / 2 : pad + ((x - minX) / (maxX - minX)) * plotW);
+  const sy = (y) => (maxY === minY ? pad + plotH / 2 : pad + (1 - (y - minY) / (maxY - minY)) * plotH);
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(sx(p[0]), sy(p[1]));
+    else ctx.lineTo(sx(p[0]), sy(p[1]));
+  });
+  ctx.stroke();
+}
+
+function renderEcgRecords() {
+  const box = $("ecg-records");
+  if (!state.ecgs.length) {
+    box.innerHTML = `<div class="empty">No digitized ECG records</div>`;
+    return;
+  }
+  box.innerHTML = state.ecgs.map((r) => {
+    const ch = r.waveform && r.waveform.channels && r.waveform.channels[0];
+    const grid = (r.waveform && r.waveform.grid) || {};
+    const meta = [
+      "Lead " + (ch && ch.name ? ch.name : "I"),
+      grid.mm_per_px_x ? grid.mm_per_px_x + " px/mm" : null,
+      "25 mm/s",
+      r.captured_by ? "By " + r.captured_by : null,
+      new Date(r.captured_at).toLocaleTimeString(),
+    ].filter(Boolean).join(" · ");
+    const warn =
+      r.quality && r.quality.checks_passed === false && r.quality.warnings
+        ? `<div class="hint warn">${r.quality.warnings.join(", ")}</div>`
+        : "";
+    return `<div class="ecg-record">
+      <img class="ecg-photo" data-ecg="${r.id}" alt="ECG photo"
+        src="/api/v1/cases/${state.selectedId}/ecg/${r.id}/image?kind=normalized">
+      <canvas class="ecg-trace" data-trace="${r.id}" width="640" height="150"></canvas>
+      <div class="ecg-meta">${meta}</div>
+      ${warn}
+      <div class="muted">Decision-support only, not a diagnosis</div>
+    </div>`;
+  }).join("");
+  for (const img of box.querySelectorAll("img.ecg-photo")) {
+    img.addEventListener("error", () => {
+      if (img.dataset.fallback) { img.remove(); return; }
+      img.dataset.fallback = "1";
+      img.src = img.src.replace("kind=normalized", "kind=original");
+    });
+  }
+  for (const r of state.ecgs) {
+    const ch = r.waveform && r.waveform.channels && r.waveform.channels[0];
+    const canvas = box.querySelector(`canvas[data-trace="${r.id}"]`);
+    if (canvas) drawRecordTrace(canvas, ch);
+  }
+}
+
+async function loadEcgRecords(caseId) {
+  try {
+    state.ecgs = await api("GET", `/api/v1/cases/${caseId}/ecg`);
+    if (caseId === state.selectedId) renderEcgRecords();
+  } catch (err) {
+    showError("Could not load ECG records: " + err.message);
+  }
+}
+
 // ---- WebSocket ---- //
 
 function closeWebSocket() {
@@ -536,6 +620,10 @@ const EVENT_META = {
   hospital_arrival: { icon: "🏥", label: "Hospital arrival" },
   case_closed: { icon: "📋", label: "Case closed" },
   severity_changed: { icon: "⚠️", label: "Severity changed" },
+  hospital_accept: { icon: "✅", label: "Hospital accepted" },
+  hospital_decline: { icon: "⛔", label: "Hospital declined" },
+  hospital_prepare: { icon: "🛏", label: "Hospital prepared" },
+  ecg_added: { icon: "🧾", label: "Digitized ECG added" },
 };
 
 function renderTimeline() {
@@ -598,6 +686,7 @@ function connectEventsWebSocket(caseId) {
     if (msg.type !== "event") return;
     state.events.push(msg.event);
     renderTimeline();
+    if (msg.event.event_type === "ecg_added") loadEcgRecords(caseId);
     const idx = state.cases.findIndex((x) => x.id === caseId);
     if (msg.case) {
       if (idx >= 0) {

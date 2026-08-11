@@ -74,6 +74,7 @@ button {
 button:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
 button.danger { background: #b91c1c; }
 button.primary { background: #16a34a; }
+button.ghost { background: #334155; color: #cbd5e1; }
 button:not(:disabled):hover { filter: brightness(1.15); }
 
 .login-card { max-width: 380px; margin: 8vh auto; }
@@ -105,3 +106,10 @@ button:not(:disabled):hover { filter: brightness(1.15); }
 .banner.ok {
   background: #14532d; border-color: #86efac; color: #bbf7d0;
 }
+
+.ecg-canvas, .ecg-trace {
+  width: 100%; max-width: 640px; margin-top: 12px; background: #f8fafc;
+  border: 1px solid #334155; border-radius: 10px;
+}
+input[type="file"] { color: #e2e8f0; }
+.hint.warn { color: #f59e0b; }

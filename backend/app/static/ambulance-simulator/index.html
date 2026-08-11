@@ -120,8 +120,33 @@
       </div>
       <p class="hint" id="engine-state">Monitoring idle</p>
     </section>
+
+    <section class="card">
+      <h2>PAPER ECG</h2>
+      <div class="controls">
+        <label class="dest-select">Sample
+          <select id="ecg-sample-select">
+            <option value="clean">Clean</option>
+            <option value="blurry">Blurry</option>
+            <option value="dark">Too dark</option>
+            <option value="gridless">No grid</option>
+            <option value="low-contrast">Low contrast</option>
+          </select>
+        </label>
+        <button id="ecg-sample-btn" class="ghost">🧪 LOAD SAMPLE</button>
+      </div>
+      <input type="file" id="ecg-file" accept="image/*">
+      <canvas id="ecg-canvas" class="ecg-canvas" width="640" height="300" hidden></canvas>
+      <canvas id="ecg-trace" class="ecg-trace" width="640" height="160" hidden></canvas>
+      <p class="hint" id="ecg-status">Capture a paper ECG photo (JPEG/PNG) or load a sample to digitize it.</p>
+      <div class="controls">
+        <button id="ecg-send-btn" class="primary" disabled>🧾 DIGITIZE & SEND</button>
+      </div>
+    </section>
   </div>
 
+  <script src="ecg.js"></script>
+  <script src="ecg-samples.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

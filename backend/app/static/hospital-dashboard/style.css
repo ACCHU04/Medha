@@ -121,3 +121,19 @@ button:not(:disabled):hover { filter: brightness(1.15); }
 .login-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .hint { color: #64748b; font-size: 0.8rem; margin-top: 12px; }
 .hint code { color: #93c5fd; }
+.hint.warn { color: #f59e0b; }
+
+.ecg-records { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }
+.ecg-record {
+  background: #0f172a; border: 1px solid #334155; border-radius: 10px;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.ecg-photo {
+  width: 100%; max-width: 640px; border-radius: 8px;
+  border: 1px solid #334155; background: #f8fafc;
+}
+.ecg-trace {
+  width: 100%; max-width: 640px; background: #f8fafc;
+  border: 1px solid #334155; border-radius: 8px;
+}
+.ecg-meta { font-size: 0.8rem; color: #cbd5e1; }

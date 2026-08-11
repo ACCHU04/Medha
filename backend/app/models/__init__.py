@@ -1,6 +1,7 @@
 from .ambulance import Ambulance
 from .case_event import CaseEvent
 from .device import Device
+from .ecg_tracing import EcgTracing
 from .emergency_case import EmergencyCase
 from .enums import (
     AmbulanceStatus,
@@ -26,6 +27,7 @@ __all__ = [
     "CaseSeverity",
     "CaseStatus",
     "Device",
+    "EcgTracing",
     "EmergencyCase",
     "GpsPoint",
     "Hospital",
