@@ -108,11 +108,31 @@
             <div class="chart-box"><h3>Blood Pressure (mmHg)</h3><canvas id="chart-bp"></canvas></div>
             <div class="chart-box"><h3>Respiratory Rate (/min)</h3><canvas id="chart-rr"></canvas></div>
           </div>
+
+          <h2 class="section-title">HANDOVER <span class="muted">· research prototype export</span></h2>
+          <div class="handover-box">
+            <div class="handover-actions">
+              <button id="btn-export-fhir" class="ghost">⬇ FHIR JSON</button>
+              <button id="btn-export-cda" class="ghost">⬇ CDA XML</button>
+              <button id="btn-print-pdf" class="ghost">🖨 PDF (print)</button>
+            </div>
+            <div class="replay-bar">
+              <button id="btn-replay" class="ghost" disabled>▶ REPLAY VITALS</button>
+              <input id="replay-slider" type="range" min="0" max="0" value="0" step="1" disabled>
+              <span id="replay-label" class="muted">No recorded vitals</span>
+            </div>
+            <div id="handover-preview" class="handover-preview">
+              <div class="empty">Select a case to build its handover preview.</div>
+            </div>
+          </div>
         </div>
       </section>
     </div>
   </div>
 
+  <div id="print-handover"></div>
+
+  <script src="handover.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

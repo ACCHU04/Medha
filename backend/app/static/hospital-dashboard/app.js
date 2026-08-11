@@ -27,7 +27,10 @@ const state = {
   reconnectTimer: null,
   reconnectDelay: 1000,
   pollTimer: null,
+  replayIndex: null,
 };
+
+const replay = { timer: null, index: 0, active: false };
 
 const $ = (id) => document.getElementById(id);
 
@@ -154,8 +157,12 @@ async function selectCase(caseId) {
   state.events = [];
   state.lastGps = null;
   state.ecgs = [];
+  stopReplay();
+  state.replayIndex = null;
   renderTimeline();
   renderEcgRecords();
+  renderHandover();
+  updateReplayControls();
   closeWebSocket();
   closeEventsWebSocket();
   renderQueue();
@@ -165,6 +172,7 @@ async function selectCase(caseId) {
   try {
     state.history = await api("GET", `/api/v1/cases/${caseId}/vitals`);
     renderVitals();
+    refreshHandover();
   } catch (err) {
     showError("Could not load vitals history: " + err.message);
   }
@@ -444,6 +452,19 @@ function drawChart(canvasId, series) {
     ctx.fillText(timeLabel(first.timestamp), padX, height - 5);
     if (last && last !== first) ctx.fillText(timeLabel(last.timestamp), width - padX - 30, height - 5);
   }
+
+  if (state.replayIndex != null && state.history.length > 0) {
+    const idx = Math.max(0, Math.min(state.history.length - 1, state.replayIndex));
+    const x = n <= 1 ? padX + plotW / 2 : padX + (idx / (n - 1)) * plotW;
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, height - padBottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 function timeLabel(iso) {
@@ -541,7 +562,10 @@ function renderEcgRecords() {
 async function loadEcgRecords(caseId) {
   try {
     state.ecgs = await api("GET", `/api/v1/cases/${caseId}/ecg`);
-    if (caseId === state.selectedId) renderEcgRecords();
+    if (caseId === state.selectedId) {
+      renderEcgRecords();
+      refreshHandover();
+    }
   } catch (err) {
     showError("Could not load ECG records: " + err.message);
   }
@@ -577,6 +601,7 @@ function connectWebSocket(caseId) {
           if (caseId === state.selectedId) {
             state.history = rows;
             renderVitals();
+            refreshHandover();
           }
         })
         .catch(() => { /* history will arrive via WS */ });
@@ -587,7 +612,8 @@ function connectWebSocket(caseId) {
     if (caseId !== state.selectedId) return;
     const vital = JSON.parse(ev.data);
     state.history.push(vital);
-    renderVitals();
+    if (!replay.active) renderVitals();
+    refreshHandover();
   };
 
   ws.onclose = (ev) => {
@@ -643,6 +669,7 @@ async function loadTimeline(caseId) {
   try {
     state.events = await api("GET", `/api/v1/cases/${caseId}/events`);
     renderTimeline();
+    refreshHandover();
   } catch (err) {
     showError("Could not load encounter timeline: " + err.message);
   }
@@ -686,6 +713,7 @@ function connectEventsWebSocket(caseId) {
     if (msg.type !== "event") return;
     state.events.push(msg.event);
     renderTimeline();
+    refreshHandover();
     if (msg.event.event_type === "ecg_added") loadEcgRecords(caseId);
     const idx = state.cases.findIndex((x) => x.id === caseId);
     if (msg.case) {
@@ -711,9 +739,172 @@ function connectEventsWebSocket(caseId) {
   ws.onerror = () => ws.close();
 }
 
+// ---- Handover (Feature 6) ---- //
+
+function refreshHandover() {
+  renderHandover();
+  updateReplayControls();
+}
+
+function renderHandover() {
+  const preview = $("handover-preview");
+  const printBox = $("print-handover");
+  const s = window.Handover ? Handover.summary(state) : null;
+  if (!s) {
+    preview.innerHTML = `<div class="empty">Select a case to build its handover preview.</div>`;
+    printBox.innerHTML = "";
+    return;
+  }
+  const html = Handover.printHtml(s);
+  preview.innerHTML = html;
+  printBox.innerHTML = html;
+  for (const box of [preview, printBox]) {
+    drawPrintTraces(box);
+    for (const img of box.querySelectorAll("img.pv-ecg-photo")) {
+      img.addEventListener("error", () => {
+        if (img.dataset.fallback) { img.remove(); return; }
+        img.dataset.fallback = "1";
+        img.src = img.src.replace("kind=normalized", "kind=original");
+      });
+    }
+  }
+}
+
+function drawPrintTraces(box) {
+  for (const canvas of box.querySelectorAll("canvas[data-print-trace]")) {
+    const id = canvas.dataset.printTrace;
+    const rec = state.ecgs.find((r) => r.id === id);
+    const ch = rec && rec.waveform && rec.waveform.channels && rec.waveform.channels[0];
+    drawRecordTrace(canvas, ch);
+  }
+}
+
+async function downloadExport(fmt) {
+  const caseId = state.selectedId;
+  if (!caseId) return;
+  const url = Handover.exportUrl(caseId, fmt);
+  try {
+    const resp = await fetch(url, {
+      headers: state.token ? { Authorization: "Bearer " + state.token } : {},
+    });
+    if (!resp.ok) {
+      let detail = resp.statusText;
+      try {
+        const data = await resp.json();
+        if (data.detail) detail = data.detail;
+      } catch (_) { /* ignore */ }
+      throw new Error(`${resp.status} ${detail}`);
+    }
+    const blob = await resp.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = Handover.filename(caseCode(caseId), fmt);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    showInfo(`Exported ${fmt.toUpperCase()} handover document`);
+  } catch (err) {
+    showError("Export failed: " + err.message);
+  }
+}
+
+function printHandover() {
+  renderHandover();
+  window.print();
+}
+
+// ---- Vitals replay (recorded observations only, no interpolation) ---- //
+
+function updateReplayControls() {
+  const slider = $("replay-slider");
+  const label = $("replay-label");
+  const btn = $("btn-replay");
+  const n = state.history.length;
+  if (n === 0) {
+    slider.max = 0;
+    slider.value = 0;
+    slider.disabled = true;
+    btn.disabled = true;
+    label.textContent = "No recorded vitals";
+    return;
+  }
+  slider.disabled = false;
+  slider.max = n - 1;
+  slider.value = replay.active ? String(replay.index) : String(n - 1);
+  btn.disabled = false;
+  if (!replay.active) {
+    label.textContent = `${n} recorded reading(s) · playback shows recorded values only`;
+  }
+}
+
+function applyReplayIndex(i) {
+  const n = state.history.length;
+  if (n === 0) return;
+  const idx = Math.max(0, Math.min(n - 1, i));
+  replay.index = idx;
+  state.replayIndex = idx;
+  $("replay-slider").value = String(idx);
+  $("replay-label").textContent =
+    `Reading ${idx + 1} of ${n} · ${timeLabel(state.history[idx].timestamp)}`;
+  const latest = state.history[idx];
+  const flags = exceedsThresholds(latest);
+  const flagMap = {};
+  for (const f of flags) flagMap[f] = true;
+  setCard("card-hr", latest.heart_rate, "BPM", flagMap.HR ? ["HR"] : []);
+  setCard("card-spo2", latest.spo2, "%", flagMap["SpO₂"] ? ["SpO₂"] : []);
+  const bpVal =
+    latest.systolic_bp != null || latest.diastolic_bp != null
+      ? `${latest.systolic_bp ?? "—"} / ${latest.diastolic_bp ?? "—"}`
+      : null;
+  setCard("card-bp", bpVal, "mmHg", flagMap.BP ? ["BP"] : []);
+  setCard("card-rr", latest.respiratory_rate, "/min", flagMap.RR ? ["RR"] : []);
+  setCard("card-temp", latest.temperature, "°C", flagMap.TEMP ? ["TEMP"] : []);
+  drawCharts();
+}
+
+function startReplay() {
+  if (state.history.length === 0) return;
+  replay.active = true;
+  $("btn-replay").textContent = "⏸ STOP REPLAY";
+  applyReplayIndex(0);
+  replay.timer = setInterval(() => {
+    if (replay.index >= state.history.length - 1) {
+      stopReplay();
+      return;
+    }
+    applyReplayIndex(replay.index + 1);
+  }, 1000);
+}
+
+function stopReplay() {
+  if (replay.timer) {
+    clearInterval(replay.timer);
+    replay.timer = null;
+  }
+  const wasActive = replay.active;
+  replay.active = false;
+  replay.index = 0;
+  state.replayIndex = null;
+  $("btn-replay").textContent = "▶ REPLAY VITALS";
+  if (wasActive) renderVitals();
+  updateReplayControls();
+}
+
 // ---- Wire up ---- //
 
 $("login-form").addEventListener("submit", login);
 $("btn-accept").addEventListener("click", () => hospitalAction("accept"));
 $("btn-decline").addEventListener("click", () => hospitalAction("decline"));
 $("btn-prepare").addEventListener("click", () => hospitalAction("prepare"));
+$("btn-export-fhir").addEventListener("click", () => downloadExport("fhir"));
+$("btn-export-cda").addEventListener("click", () => downloadExport("cda"));
+$("btn-print-pdf").addEventListener("click", printHandover);
+$("btn-replay").addEventListener("click", () => {
+  if (replay.active) stopReplay();
+  else startReplay();
+});
+$("replay-slider").addEventListener("input", (ev) => {
+  if (replay.active) stopReplay();
+  applyReplayIndex(Number(ev.target.value));
+});
