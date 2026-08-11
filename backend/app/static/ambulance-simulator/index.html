@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEDHA LINK — Ambulance</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+
+  <div id="login-view" class="card login-card">
+    <h1>🚑 MEDHA LINK — AMBULANCE</h1>
+    <p class="subtitle">Paramedic sign-in</p>
+    <form id="login-form">
+      <label>Username
+        <input id="username" autocomplete="username" placeholder="paramedic1" required>
+      </label>
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      </label>
+      <button type="submit">LOGIN</button>
+    </form>
+    <p class="hint">Local demo: <code>paramedic1</code> / <code>s3curepass</code></p>
+  </div>
+
+  <div id="app-view" hidden>
+    <header class="card header">
+      <div>
+        <h1>🚑 MEDHA LINK — AMBULANCE</h1>
+        <p class="subtitle">Paramedic: <strong id="para-name">—</strong></p>
+      </div>
+      <div class="amb-box">
+        <div>Ambulance: <strong id="amb-vehicle">—</strong></div>
+        <div>Status: <span id="amb-status" class="badge">—</span></div>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>CONNECTIVITY</h2>
+      <div class="conn-row">
+        <span id="net-badge" class="badge online">🟢 ONLINE</span>
+        <button id="offline-btn" disabled>SIMULATE OFFLINE</button>
+      </div>
+      <p class="hint" id="sync-status">Vitals queue to IndexedDB and flush via /api/v1/sync/push</p>
+    </section>
+
+    <section class="card">
+      <h2>PATIENT</h2>
+      <form id="patient-form" class="row-form">
+        <label>Name <input id="patient-name" required></label>
+        <label>Age <input id="patient-age" type="number" min="0" max="130" required></label>
+        <label>Sex
+          <select id="patient-sex">
+            <option value="m">Male</option>
+            <option value="f">Female</option>
+            <option value="">Other</option>
+          </select>
+        </label>
+        <button type="submit">SAVE PATIENT</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>EMERGENCY CASE</h2>
+      <form id="case-form" class="row-form">
+        <label>Chief complaint <input id="complaint" placeholder="Chest pain" required></label>
+        <label>Severity
+          <select id="severity">
+            <option value="high">High</option>
+            <option value="moderate">Moderate</option>
+            <option value="low">Low</option>
+            <option value="critical">Critical</option>
+          </select>
+        </label>
+        <button type="submit" id="create-case-btn" disabled>CREATE EMERGENCY CASE</button>
+      </form>
+      <p class="hint">Case id: <code id="case-id">—</code></p>
+    </section>
+
+    <section class="card">
+      <h2>ENCOUNTER LIFECYCLE</h2>
+      <div class="conn-row">
+        <span id="enc-stage" class="badge idle">NO CASE</span>
+        <label class="dest-select">Destination
+          <select id="dest-select" disabled>
+            <option value="__auto__">Auto (nearest)</option>
+          </select>
+        </label>
+      </div>
+      <div id="transport-info" class="transport-info" hidden>
+        <span id="t-dest">—</span>
+        <span id="t-eta" class="badge eta">—</span>
+        <span id="t-accept" class="badge idle">—</span>
+      </div>
+      <div id="t-recommend" class="hint" hidden></div>
+      <canvas id="enc-map" class="enc-map" width="360" height="150"></canvas>
+      <div class="controls">
+        <button id="btn-scene" class="primary" disabled>📍 SCENE ARRIVAL</button>
+        <button id="btn-transport" class="primary" disabled>🚑 START TRANSPORT</button>
+        <button id="btn-hospital" class="primary" disabled>🏥 HOSPITAL ARRIVAL</button>
+        <button id="btn-close" class="danger" disabled>📋 CLOSE CASE</button>
+      </div>
+      <ol id="enc-timeline" class="timeline"></ol>
+    </section>
+
+    <section class="card">
+      <h2>LIVE VITALS</h2>
+      <div class="vitals-grid">
+        <div class="vital"><span>❤️ HR</span><strong id="v-hr">—</strong><small>BPM</small></div>
+        <div class="vital"><span>🫁 SpO₂</span><strong id="v-spo2">—</strong><small>%</small></div>
+        <div class="vital"><span>🩸 BP</span><strong id="v-bp">—</strong><small>mmHg</small></div>
+        <div class="vital"><span>🌡 Temp</span><strong id="v-temp">—</strong><small>°C</small></div>
+        <div class="vital"><span>🌬 RR</span><strong id="v-rr">—</strong><small>/min</small></div>
+      </div>
+      <div class="controls">
+        <button id="start-btn" class="primary" disabled>▶ START MONITORING</button>
+        <button id="deteriorate-btn" class="danger" disabled>🚨 SIMULATE DETERIORATION</button>
+        <button id="stop-btn" disabled>⏹ STOP</button>
+      </div>
+      <p class="hint" id="engine-state">Monitoring idle</p>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

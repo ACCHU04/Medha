@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEDHA LINK — Hospital Command</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+
+  <div id="login-view" class="card login-card">
+    <h1>🏥 MEDHA LINK — HOSPITAL COMMAND</h1>
+    <p class="subtitle">Staff sign-in</p>
+    <form id="login-form">
+      <label>Username
+        <input id="username" autocomplete="username" placeholder="admin1" required>
+      </label>
+      <label>Password
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      </label>
+      <button type="submit">LOGIN</button>
+    </form>
+    <p class="hint">Local demo: <code>admin1</code> / <code>s3curepass</code></p>
+  </div>
+
+  <div id="app-view" hidden>
+    <header class="card header">
+      <div>
+        <h1>🏥 MEDHA LINK — HOSPITAL COMMAND</h1>
+        <p class="subtitle" id="hospital-name">MEDHA City Hospital · <strong id="user-name">—</strong></p>
+      </div>
+      <div class="conn-box">
+        <div id="conn-status" class="badge">—</div>
+        <div><button id="refresh-btn" class="ghost">⟳ Refresh queue</button></div>
+      </div>
+    </header>
+
+    <div class="columns">
+      <section class="card">
+        <h2>INCOMING EMERGENCIES</h2>
+        <table class="queue" id="queue-table">
+          <thead>
+            <tr><th>PRIORITY</th><th>PATIENT</th><th>CASE</th><th>ETA / STATUS</th></tr>
+          </thead>
+          <tbody id="queue-body">
+            <tr><td colspan="4" class="empty">No open cases</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card" id="detail-card">
+        <h2>CASE DETAIL <span id="detail-case-id" class="muted"></span></h2>
+        <div id="detail-empty" class="empty">Select a case from the queue</div>
+        <div id="detail-body" hidden>
+          <div class="info-grid">
+            <div class="info-block">
+              <h3>PATIENT</h3>
+              <div id="info-patient"></div>
+            </div>
+            <div class="info-block">
+              <h3>CASE</h3>
+              <div id="info-case"></div>
+            </div>
+            <div class="info-block">
+              <h3>AMBULANCE</h3>
+              <div id="info-ambulance"></div>
+            </div>
+          </div>
+
+          <h2 class="section-title">TRANSPORT / HOSPITAL</h2>
+          <div class="transport-box" id="transport-box">
+            <div class="transport-meta">
+              <span id="t-dest" class="muted">Destination: —</span>
+              <span id="t-eta" class="badge">ETA —</span>
+              <span id="t-accept" class="badge">—</span>
+            </div>
+            <p id="t-recommend" class="hint" hidden></p>
+            <div id="t-actions" class="actions" hidden>
+              <button id="btn-accept" class="primary">✓ ACCEPT CASE</button>
+              <button id="btn-decline" class="danger">✕ CANNOT ACCEPT</button>
+              <button id="btn-prepare" class="ghost">🛏 PREPARE BED</button>
+            </div>
+            <canvas id="case-map" class="map" width="360" height="140"></canvas>
+          </div>
+
+          <h2 class="section-title">ENCOUNTER TIMELINE</h2>
+          <ol id="case-timeline" class="timeline"></ol>
+
+          <h2 class="section-title">LIVE VITALS</h2>
+          <div class="vitals-grid">
+            <div class="vital" id="card-hr"><span>❤️ HEART RATE</span><strong>—</strong><small>BPM</small><em></em></div>
+            <div class="vital" id="card-spo2"><span>🫁 SpO₂</span><strong>—</strong><small>%</small><em></em></div>
+            <div class="vital" id="card-bp"><span>🩸 BLOOD PRESSURE</span><strong>—</strong><small>mmHg</small><em></em></div>
+            <div class="vital" id="card-rr"><span>🌬 RESP RATE</span><strong>—</strong><small>/min</small><em></em></div>
+            <div class="vital" id="card-temp"><span>🌡 TEMP</span><strong>—</strong><small>°C</small><em></em></div>
+          </div>
+
+          <h2 class="section-title">HISTORY</h2>
+          <div class="charts-grid">
+            <div class="chart-box"><h3>Heart Rate (BPM)</h3><canvas id="chart-hr"></canvas></div>
+            <div class="chart-box"><h3>SpO₂ (%)</h3><canvas id="chart-spo2"></canvas></div>
+            <div class="chart-box"><h3>Blood Pressure (mmHg)</h3><canvas id="chart-bp"></canvas></div>
+            <div class="chart-box"><h3>Respiratory Rate (/min)</h3><canvas id="chart-rr"></canvas></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

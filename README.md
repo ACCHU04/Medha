@@ -80,6 +80,23 @@ uvicorn app.main:app --reload --port 8000
 alembic upgrade head
 ```
 
+### 5. Seed development data (from Step 7 onward)
+
+```bash
+python -m app.seed_dev
+```
+
+Creates (idempotently): `paramedic1`, `doctor1`, `admin1` (all password `s3curepass`), hospital `MEDHA City Hospital`, and ambulance `MH-01-AMB-001` (status `transporting`) assigned to `paramedic1`. Local development only; never reuse these credentials in production.
+
+### 6. Phase-1 UI
+
+```bash
+# ambulance simulator (Step 7)
+http://127.0.0.1:8000/ambulance-simulator/   # login: paramedic1 / s3curepass
+# hospital dashboard (Step 8)
+http://127.0.0.1:8000/hospital-dashboard/
+```
+
 ## Build roadmap
 
 1. Infrastructure (Docker + PostgreSQL) - DONE

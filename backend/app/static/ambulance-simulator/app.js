@@ -1,0 +1,1065 @@
+"use strict";
+
+const INTERVAL_MS = 2000;
+const GPS_INTERVAL_MS = 5000;
+const MAX_ATTEMPTS = 5;
+const RETRY_MS = 5000;
+const AVG_SPEED_KMH = 30;
+
+const BASELINES = {
+  normal: { hr: 118, spo2: 91, sys: 90, dia: 60, temp: 37.2, rr: 26 },
+  critical: { hr: 142, spo2: 84, sys: 78, dia: 45, temp: 37.2, rr: 30 },
+};
+
+const WALK = {
+  hr: { step: 2, lo: 80, hi: 200 },
+  spo2: { step: 1, lo: 70, hi: 100 },
+  sys: { step: 2, lo: 60, hi: 180 },
+  dia: { step: 2, lo: 40, hi: 120 },
+  temp: { step: 0.1, lo: 35.0, hi: 40.0 },
+  rr: { step: 1, lo: 12, hi: 40 },
+};
+
+const state = {
+  token: null,
+  me: null,
+  ambulance: null,
+  patient: null,
+  case: null,
+  hospitals: [],
+  mode: "normal",
+  current: { ...BASELINES.normal },
+  engineId: null,
+  gpsId: null,
+  running: false,
+  device: null,
+  clock: null,
+  simOffline: false,
+  network: "online",
+  events: [],
+  route: null,
+  ws: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function showError(msg) {
+  const banner = $("banner");
+  banner.textContent = "⚠ " + msg;
+  banner.className = "banner";
+  banner.hidden = false;
+}
+
+function showInfo(msg) {
+  const banner = $("banner");
+  banner.textContent = msg;
+  banner.className = "banner ok";
+  banner.hidden = false;
+}
+
+function showSync(msg) {
+  const el = $("sync-status");
+  el.textContent = msg;
+  el.className = "hint sync-ok";
+}
+
+function clearError() {
+  $("banner").hidden = true;
+}
+
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+  const resp = await fetch(path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try {
+      const data = await resp.json();
+      if (data.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    } catch (_) { /* ignore */ }
+    throw new Error(`${resp.status} ${detail}`);
+  }
+  return resp.status === 204 ? null : resp.json();
+}
+
+function setBadge(text) {
+  const badge = $("amb-status");
+  badge.textContent = text;
+  badge.className = "badge";
+}
+
+function renderVitals(v) {
+  $("v-hr").textContent = v.hr;
+  $("v-spo2").textContent = v.spo2;
+  $("v-bp").textContent = `${v.sys} / ${v.dia}`;
+  $("v-temp").textContent = v.temp.toFixed(1);
+  $("v-rr").textContent = v.rr;
+  const box = state.mode === "critical" ? "critical" : "";
+  document.querySelectorAll(".vital").forEach((el) => {
+    el.classList.toggle("critical", box === "critical");
+  });
+}
+
+function setEngineState(text) {
+  $("engine-state").textContent = text;
+}
+
+// ---- Hybrid Logical Clock (byte-compatible mirror of app/services/sync/hlc.py) ----
+
+class HlcTimestamp {
+  constructor(ms, counter, deviceId) {
+    this.ms = ms;
+    this.counter = counter;
+    this.deviceId = deviceId;
+  }
+
+  toString() {
+    return (
+      String(this.ms).padStart(20, "0") +
+      ":" +
+      String(this.counter).padStart(6, "0") +
+      ":" +
+      this.deviceId
+    );
+  }
+
+  static fromString(value) {
+    const parts = value.split(":");
+    if (parts.length !== 3) throw new Error("malformed hlc");
+    return new HlcTimestamp(Number(parts[0]), Number(parts[1]), parts[2]);
+  }
+}
+
+class HlcClock {
+  constructor(deviceId, wallMillis = null) {
+    if (typeof deviceId !== "string" || deviceId.length !== 36) {
+      throw new Error("device_id must be 36 chars");
+    }
+    this.deviceId = deviceId;
+    this._wall = wallMillis || (() => Date.now());
+    this._last = null;
+  }
+
+  now(received = null) {
+    const wallMs = this._wall();
+    const last = this._last;
+    const lastMs = last === null ? null : last.ms;
+    const recv =
+      received === null || received === undefined
+        ? null
+        : typeof received === "string"
+          ? HlcTimestamp.fromString(received)
+          : received;
+
+    let nowMs;
+    let counter;
+    if (recv === null) {
+      if (last === null) {
+        nowMs = wallMs;
+        counter = 0;
+      } else {
+        nowMs = Math.max(wallMs, lastMs);
+        counter = nowMs > lastMs ? 0 : last.counter + 1;
+      }
+    } else if (last === null) {
+      nowMs = Math.max(wallMs, recv.ms);
+      counter = nowMs > recv.ms ? 0 : recv.counter + 1;
+    } else {
+      nowMs = Math.max(wallMs, lastMs, recv.ms);
+      if (nowMs === lastMs && nowMs === recv.ms) counter = Math.max(last.counter, recv.counter) + 1;
+      else if (nowMs === lastMs) counter = last.counter + 1;
+      else if (nowMs === recv.ms) counter = recv.counter + 1;
+      else counter = 0;
+    }
+
+    const ts = new HlcTimestamp(nowMs, counter, this.deviceId);
+    this._last = ts;
+    return ts.toString();
+  }
+}
+
+function hlcCmp(a, b) {
+  const pa = a.split(":");
+  const pb = b.split(":");
+  for (let i = 0; i < 2; i++) {
+    const x = Number(pa[i]);
+    const y = Number(pb[i]);
+    if (x < y) return -1;
+    if (x > y) return 1;
+  }
+  if (pa[2] < pb[2]) return -1;
+  if (pa[2] > pb[2]) return 1;
+  return 0;
+}
+
+// ---- IndexedDB outbox ----
+
+let _dbPromise = null;
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("medha-sync", 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("outbox")) {
+        const store = db.createObjectStore("outbox", { keyPath: "id" });
+        store.createIndex("status", "status");
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("indexedDB open failed"));
+  });
+}
+
+function ensureDb() {
+  if (!_dbPromise) _dbPromise = openDb();
+  return _dbPromise;
+}
+
+function allPending() {
+  return ensureDb().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const t = db.transaction("outbox", "readonly");
+        const req = t.objectStore("outbox").index("status").getAll("pending");
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      })
+  );
+}
+
+function putRecord(db, rec) {
+  return new Promise((resolve, reject) => {
+    const t = db.transaction("outbox", "readwrite");
+    const req = t.objectStore("outbox").put(rec);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function deleteRecord(db, id) {
+  return new Promise((resolve, reject) => {
+    const t = db.transaction("outbox", "readwrite");
+    const req = t.objectStore("outbox").delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function updateStatus(id, status, error, attempts) {
+  return ensureDb().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const t = db.transaction("outbox", "readwrite");
+        const store = t.objectStore("outbox");
+        const req = store.get(id);
+        req.onsuccess = () => {
+          const rec = req.result;
+          if (!rec) { resolve(); return; }
+          rec.status = status;
+          if (error !== undefined) rec.error = error;
+          if (attempts !== undefined) rec.attempts = attempts;
+          store.put(rec);
+          resolve();
+        };
+        req.onerror = () => reject(req.error);
+      })
+  );
+}
+
+function enqueueOp(op) {
+  return ensureDb().then((db) =>
+    putRecord(db, {
+      id: op.id,
+      op: op.op,
+      entity: op.entity,
+      ref_id: op.ref_id,
+      device_id: op.device_id,
+      hlc: op.hlc,
+      payload: op.data,
+      status: "pending",
+      attempts: 0,
+      created_at: new Date().toISOString(),
+    })
+  );
+}
+
+// ---- Device registration (stable HLC device id per browser) ----
+
+async function ensureDevice() {
+  const stored = localStorage.getItem("medha_device");
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && parsed.id) {
+        state.device = { id: parsed.id };
+        state.clock = new HlcClock(parsed.id);
+        return;
+      }
+    } catch (_) { /* fall through and re-register */ }
+  }
+  const vehicle = (state.ambulance.vehicle_number || "amb").toLowerCase();
+  const device = await api("POST", "/api/v1/devices", { label: "amb-sim-" + vehicle });
+  state.device = { id: device.id };
+  state.clock = new HlcClock(device.id);
+  localStorage.setItem("medha_device", JSON.stringify({ id: device.id }));
+}
+
+// ---- Vital engine ----
+
+function clamp(value, lo, hi) {
+  return Math.min(hi, Math.max(lo, value));
+}
+
+function walkValue(key, value) {
+  const rule = WALK[key];
+  const next = value + (Math.floor(Math.random() * (rule.step * 2 + 1)) - rule.step);
+  const clamped = clamp(next, rule.lo, rule.hi);
+  return key === "temp" ? Math.round(clamped * 10) / 10 : Math.round(clamped);
+}
+
+function nextVitals() {
+  const out = {};
+  for (const key of ["hr", "spo2", "sys", "dia", "temp", "rr"]) {
+    out[key] = walkValue(key, state.current[key]);
+  }
+  return out;
+}
+
+function toPayload(v) {
+  return {
+    heart_rate: v.hr,
+    spo2: v.spo2,
+    systolic_bp: v.sys,
+    diastolic_bp: v.dia,
+    temperature: v.temp,
+    respiratory_rate: v.rr,
+    source: "simulated",
+  };
+}
+
+function newUuid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+async function enqueueVital(v) {
+  const op = {
+    id: newUuid(),
+    op: "upsert",
+    entity: "vital",
+    ref_id: state.case.id,
+    device_id: state.device.id,
+    hlc: state.clock.now(),
+    data: { ...toPayload(v), case_id: state.case.id, timestamp: new Date().toISOString() },
+  };
+  await enqueueOp(op);
+  return op;
+}
+
+function nextBackoffSeconds(attempts) {
+  if (attempts <= 1) return 0;
+  return Math.min(1 * Math.pow(2, attempts - 1), 60);
+}
+
+async function countPending() {
+  const rows = await allPending();
+  return rows.length;
+}
+
+async function flushOutbox() {
+  const ops = (await allPending()).sort((a, b) => hlcCmp(a.hlc, b.hlc));
+  if (ops.length === 0) return { sent: 0, skipped: 0 };
+
+  const batch = ops.map((r) => ({
+    op: r.op,
+    entity: r.entity,
+    id: r.id,
+    device_id: r.device_id,
+    hlc: r.hlc,
+    data: r.payload,
+  }));
+
+  let resp;
+  try {
+    resp = await api("POST", "/api/v1/sync/push", { batch });
+  } catch (err) {
+    let failed = 0;
+    for (const r of ops) {
+      const attempts = r.attempts + 1;
+      if (attempts > MAX_ATTEMPTS) {
+        await updateStatus(r.id, "failed", "max attempts reached", attempts);
+        failed++;
+      } else {
+        await updateStatus(r.id, "pending", "transport: " + err.message, attempts);
+      }
+    }
+    const transportErr = new Error(err.message);
+    transportErr.online = false;
+    transportErr.failed = failed;
+    throw transportErr;
+  }
+
+  const appliedIds = new Set((resp.applied || []).map((o) => String(o.id)));
+  for (const r of ops) {
+    if (appliedIds.has(String(r.id))) await deleteRecord(await ensureDb(), r.id);
+  }
+  for (const s of resp.skipped || []) {
+    await updateStatus(String(s.id), "failed", s.reason || "skipped");
+  }
+  const transitions = ops.some((r) => r.entity === "transition");
+  const gps = ops.some((r) => r.entity === "gps");
+  return { sent: ops.length, skipped: (resp.skipped || []).length, transitions, gps };
+}
+
+// ---- Network / buffering ----
+
+let retryTimer = null;
+
+async function runFlush() {
+  try {
+    const result = await flushOutbox();
+    await updateOfflineUI();
+    if (result.transitions) await refreshEncounter();
+    const pending = await countPending();
+    const applied = result.sent - result.skipped;
+    if (pending === 0) {
+      if (result.sent > 0) {
+        showSync("✓ " + applied + (result.skipped ? " synced, " + result.skipped + " rejected" : " vitals synced"));
+      }
+      setEngineState("Monitoring — online, queue empty");
+    } else {
+      showSync("✓ " + applied + " synced · " + pending + " still pending");
+      setEngineState("Monitoring — online, " + pending + " pending");
+    }
+  } catch (err) {
+    enterBuffering(err.message);
+  }
+}
+
+function enterBuffering(reason) {
+  state.network = "offline";
+  updateOfflineUI().then(scheduleRetry);
+  setEngineState("OFFLINE — buffering (" + reason + ")");
+}
+
+function scheduleRetry() {
+  if (state.simOffline || retryTimer !== null) return;
+  allPending().then((rows) => {
+    if (rows.length === 0) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (state.running) runFlush();
+    }, RETRY_MS);
+  });
+}
+
+function setOffline(on) {
+  state.simOffline = on;
+  if (on) {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    state.network = "offline";
+    updateOfflineUI();
+    setEngineState("OFFLINE — buffering, monitoring continues");
+  } else {
+    state.network = "online";
+    updateOfflineUI();
+    runFlush();
+  }
+}
+
+async function updateOfflineUI() {
+  const pending = await countPending();
+  const badge = $("net-badge");
+  const btn = $("offline-btn");
+  if (state.network === "offline") {
+    badge.textContent = "🔴 OFFLINE — BUFFERING (" + pending + ")";
+    badge.className = "badge offline";
+    btn.textContent = "RESTORE NETWORK";
+    btn.classList.add("toggled");
+  } else {
+    badge.textContent = "🟢 ONLINE" + (pending > 0 ? " — " + pending + " pending" : "");
+    badge.className = "badge online";
+    btn.textContent = "SIMULATE OFFLINE";
+    btn.classList.remove("toggled");
+  }
+}
+
+// ---- Auth ----
+
+async function login(ev) {
+  ev.preventDefault();
+  clearError();
+  try {
+    const data = await api("POST", "/api/v1/auth/login", {
+      username: $("username").value.trim(),
+      password: $("password").value,
+    });
+    state.token = data.access_token;
+    await loadSession();
+  } catch (err) {
+    showError("Login failed: " + err.message);
+  }
+}
+
+async function loadSession() {
+  state.me = await api("GET", "/api/v1/auth/me");
+  state.ambulance = await api("GET", "/api/v1/ambulances/mine");
+  await ensureDevice();
+  $("login-view").hidden = true;
+  $("app-view").hidden = false;
+  $("para-name").textContent = state.me.username;
+  $("amb-vehicle").textContent = state.ambulance.vehicle_number;
+  setBadge(state.ambulance.status.toUpperCase());
+  await loadHospitals();
+  updateOfflineUI();
+}
+
+async function loadHospitals() {
+  try {
+    state.hospitals = await api("GET", "/api/v1/hospitals");
+  } catch (_) {
+    state.hospitals = [];
+  }
+  const select = $("dest-select");
+  select.innerHTML = '<option value="__auto__">Auto (nearest)</option>';
+  for (const h of state.hospitals) {
+    const opt = document.createElement("option");
+    opt.value = h.id;
+    opt.textContent = h.name;
+    select.appendChild(opt);
+  }
+}
+
+// ---- Patient / Case ----
+
+async function createPatient(ev) {
+  ev.preventDefault();
+  clearError();
+  try {
+    state.patient = await api("POST", "/api/v1/patients", {
+      name: $("patient-name").value.trim(),
+      age: Number($("patient-age").value),
+      sex: $("patient-sex").value || null,
+    });
+    $("create-case-btn").disabled = false;
+    showInfo("Patient saved: " + state.patient.name);
+  } catch (err) {
+    showError("Patient creation failed: " + err.message);
+  }
+}
+
+async function createCase(ev) {
+  ev.preventDefault();
+  clearError();
+  try {
+    state.case = await api("POST", "/api/v1/cases", {
+      patient_id: state.patient.id,
+      ambulance_id: state.ambulance.id,
+      chief_complaint: $("complaint").value.trim(),
+      severity: $("severity").value,
+    });
+    $("case-id").textContent = state.case.id;
+    $("dest-select").disabled = false;
+    $("start-btn").disabled = false;
+    resetEncounterUI();
+    connectEventsWs();
+    showInfo("Emergency case created");
+  } catch (err) {
+    showError("Case creation failed: " + err.message);
+  }
+}
+
+// ---- Monitoring engine ----
+
+async function tick() {
+  if (!state.running) return;
+  state.current = nextVitals();
+  renderVitals(state.current);
+  try {
+    await enqueueVital(state.current);
+  } catch (err) {
+    showError("Local queue write failed: " + err.message);
+    return;
+  }
+  if (state.network === "online") {
+    await runFlush();
+  } else {
+    await updateOfflineUI();
+  }
+}
+
+function startMonitoring() {
+  if (state.running) return;
+  if (!state.case) return;
+  clearError();
+  state.running = true;
+  state.simOffline = false;
+  state.network = "online";
+  $("start-btn").disabled = true;
+  $("deteriorate-btn").disabled = false;
+  $("stop-btn").disabled = false;
+  $("offline-btn").disabled = false;
+  setEngineState("Monitoring — online");
+  state.current = { ...BASELINES.normal };
+  state.mode = "normal";
+  renderVitals(state.current);
+  updateOfflineUI();
+  state.engineId = setInterval(tick, INTERVAL_MS);
+}
+
+function stopMonitoring() {
+  if (state.engineId !== null) {
+    clearInterval(state.engineId);
+    state.engineId = null;
+  }
+  state.running = false;
+  if (retryTimer !== null) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  $("start-btn").disabled = false;
+  $("deteriorate-btn").disabled = true;
+  $("stop-btn").disabled = true;
+  $("offline-btn").disabled = true;
+  $("offline-btn").classList.remove("toggled");
+  if (state.network === "online") runFlush();
+  setEngineState("Monitoring stopped");
+}
+
+async function simulateDeterioration() {
+  if (!state.running) return;
+  clearError();
+  state.mode = "critical";
+  state.current = { ...BASELINES.critical };
+  renderVitals(state.current);
+  setEngineState("CRITICAL — posting immediate critical reading");
+  try {
+    await enqueueVital(state.current);
+    if (state.network === "online") {
+      await runFlush();
+    } else {
+      await updateOfflineUI();
+    }
+    if (state.mode === "critical") {
+      setEngineState("CRITICAL — continuing around critical baseline");
+    }
+  } catch (err) {
+    showError("Critical vital failed: " + err.message);
+  }
+}
+
+// ---- Encounter lifecycle (Feature 2) ----
+
+const LIFECYCLE_EVENTS = {
+  scene_arrival: { icon: "📍", label: "Scene arrival" },
+  transport_start: { icon: "🚑", label: "Transport started" },
+  hospital_arrival: { icon: "🏥", label: "Hospital arrival" },
+  case_closed: { icon: "📋", label: "Case closed" },
+  severity_changed: { icon: "⚠️", label: "Severity changed" },
+  hospital_accept: { icon: "✅", label: "Hospital accepted" },
+  hospital_decline: { icon: "⛔", label: "Hospital declined" },
+  hospital_prepare: { icon: "🛏", label: "Hospital prepared" },
+};
+
+const STAGE_LABELS = {
+  active: "ACTIVE",
+  transporting: "EN ROUTE",
+  at_hospital: "AT HOSPITAL",
+  closed: "CLOSED",
+};
+
+function resetEncounterUI() {
+  state.events = [];
+  renderEncounterTimeline();
+  updateEncounterUI();
+}
+
+function renderEncounterTimeline() {
+  const ol = $("enc-timeline");
+  ol.innerHTML = "";
+  if (!state.events.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "No encounter events yet — start with Scene Arrival.";
+    ol.appendChild(li);
+    return;
+  }
+  for (const ev of state.events) {
+    const li = document.createElement("li");
+    const meta = LIFECYCLE_EVENTS[ev.event_type] || { icon: "•", label: ev.event_type.replace("_", " ") };
+    const time = new Date(ev.created_at).toLocaleTimeString();
+    li.innerHTML = `<span class="t-icon">${meta.icon}</span><span>${meta.label}</span><time>${time}</time>`;
+    ol.appendChild(li);
+  }
+}
+
+function updateEncounterUI() {
+  const stage = $("enc-stage");
+  if (!state.case) {
+    stage.textContent = "NO CASE";
+    stage.className = "badge idle";
+    setEncounterButtons({});
+    return;
+  }
+  const status = state.case.status || "active";
+  stage.textContent = STAGE_LABELS[status] || status.toUpperCase();
+  stage.className = "badge status-" + status;
+  const arrived = state.events.some((e) => e.event_type === "scene_arrival");
+  setEncounterButtons({
+    "btn-scene": status === "active" && !arrived,
+    "btn-transport": status === "active",
+    "btn-hospital": status === "transporting",
+    "btn-close": ["active", "transporting", "at_hospital"].includes(status),
+  });
+  const transporting = status === "transporting";
+  $("dest-select").disabled = !state.case || status !== "active";
+  $("transport-info").hidden = !(status === "transporting" || status === "at_hospital");
+}
+
+function setEncounterButtons(map) {
+  for (const id in map) $(id).disabled = !map[id];
+}
+
+async function enqueueTransition(eventType, extra) {
+  const op = {
+    id: newUuid(),
+    op: "upsert",
+    entity: "transition",
+    ref_id: state.case.id,
+    device_id: state.device.id,
+    hlc: state.clock.now(),
+    data: { case_id: state.case.id, event_type: eventType, ...(extra || {}) },
+  };
+  await enqueueOp(op);
+  return op;
+}
+
+function applyLocalTransition(eventType) {
+  const statusAfter = {
+    scene_arrival: "active",
+    transport_start: "transporting",
+    hospital_arrival: "at_hospital",
+    case_closed: "closed",
+  };
+  state.case.status = statusAfter[eventType];
+  state.events.push({ event_type: eventType, created_at: new Date().toISOString() });
+  updateEncounterUI();
+}
+
+function phaseFromEvents(events) {
+  const types = new Set(events.map((e) => e.event_type));
+  if (types.has("case_closed")) return "closed";
+  if (types.has("hospital_arrival")) return "at_hospital";
+  if (types.has("transport_start")) return "transporting";
+  return "active";
+}
+
+// ---- Transport info (Feature 3) ----
+
+const ACCEPT_LABELS = {
+  accepted: "✅ ACCEPTED",
+  declined: "⛔ DECLINED",
+};
+
+function renderTransportInfo() {
+  if (!state.case) return;
+  const dest = state.case.destination_hospital;
+  $("t-dest").textContent = dest ? "→ " + dest.name : "→ destination pending";
+  const eta = state.case.eta_minutes;
+  const etaEl = $("t-eta");
+  if (eta != null) {
+    etaEl.textContent = "ETA " + eta + " MIN";
+    etaEl.className = "badge eta";
+  } else {
+    etaEl.textContent = "ETA —";
+    etaEl.className = "badge idle";
+  }
+  const acc = state.case.acceptance;
+  const accEl = $("t-accept");
+  if (state.case.prepared_at) {
+    accEl.textContent = "🛏 READY FOR ARRIVAL";
+    accEl.className = "badge ready";
+  } else if (ACCEPT_LABELS[acc]) {
+    accEl.textContent = ACCEPT_LABELS[acc];
+    accEl.className = "badge " + (acc === "accepted" ? "accepted" : "declined");
+  } else {
+    accEl.textContent = "⏳ AWAITING HOSPITAL";
+    accEl.className = "badge pending";
+  }
+  const rec = state.case.recommended_hospital;
+  const recEl = $("t-recommend");
+  if (acc === "declined" && rec) {
+    recEl.hidden = false;
+    recEl.textContent = "Hospital declined — recommend " + rec.name;
+  } else {
+    recEl.hidden = true;
+  }
+  drawMap();
+}
+
+// ---- GPS engine (Feature 3) ----
+
+function offsetFrom(center, bearing, km) {
+  const R = 6371;
+  const latRad = (center.latitude * Math.PI) / 180;
+  const dLat = (km / R) * Math.cos(bearing);
+  const dLng = ((km / R) * Math.sin(bearing)) / Math.cos(latRad);
+  return {
+    lat: center.latitude + dLat * (180 / Math.PI),
+    lng: center.longitude + dLng * (180 / Math.PI),
+  };
+}
+
+function buildRoute(dest) {
+  const bearing = Math.random() * 2 * Math.PI;
+  const km = 3 + Math.random() * 3;
+  const start = offsetFrom(dest, bearing, km);
+  state.route = {
+    start,
+    dest: { lat: dest.latitude, lng: dest.longitude },
+    t: 0,
+    durationMs: (km / AVG_SPEED_KMH) * 3600 * 1000,
+    lastTick: null,
+  };
+}
+
+function ensureRoute() {
+  if (state.route) return true;
+  const dest = state.case && state.case.destination_hospital;
+  if (dest && dest.latitude != null && dest.longitude != null) {
+    buildRoute(dest);
+    drawMap();
+    return true;
+  }
+  return false;
+}
+
+function routePosition() {
+  const r = state.route;
+  if (!r) return null;
+  const t = Math.min(1, Math.max(0, r.t));
+  return {
+    lat: r.start.lat + (r.dest.lat - r.start.lat) * t,
+    lng: r.start.lng + (r.dest.lng - r.start.lng) * t,
+  };
+}
+
+async function gpsTick() {
+  if (!state.case || state.case.status !== "transporting") {
+    stopGps();
+    return;
+  }
+  if (!ensureRoute()) return;
+  const now = Date.now();
+  if (state.route.lastTick !== null) {
+    state.route.t += (now - state.route.lastTick) / state.route.durationMs;
+  }
+  state.route.lastTick = now;
+  const pos = routePosition();
+  const op = {
+    id: newUuid(),
+    op: "upsert",
+    entity: "gps",
+    ref_id: state.case.id,
+    device_id: state.device.id,
+    hlc: state.clock.now(),
+    data: {
+      case_id: state.case.id,
+      ambulance_id: state.ambulance.id,
+      latitude: pos.lat,
+      longitude: pos.lng,
+      recorded_at: new Date().toISOString(),
+    },
+  };
+  try {
+    await enqueueOp(op);
+  } catch (err) {
+    showError("GPS queue write failed: " + err.message);
+    return;
+  }
+  drawMap();
+  if (state.network === "online") {
+    const result = await runFlush();
+    if (result.gps) await refreshEncounter();
+  } else {
+    await updateOfflineUI();
+  }
+}
+
+function syncGpsEngine() {
+  const status = state.case && state.case.status;
+  if (status === "transporting") {
+    if (state.gpsId === null) state.gpsId = setInterval(gpsTick, GPS_INTERVAL_MS);
+    ensureRoute();
+  } else if (state.gpsId !== null) {
+    stopGps();
+  }
+}
+
+function stopGps() {
+  if (state.gpsId !== null) {
+    clearInterval(state.gpsId);
+    state.gpsId = null;
+  }
+}
+
+function drawMap() {
+  const canvas = $("enc-map");
+  if (!canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const pts = [];
+  if (state.route) {
+    pts.push(state.route.start, state.route.dest);
+  } else if (state.case && state.case.destination_hospital) {
+    pts.push({ lat: state.case.destination_hospital.latitude, lng: state.case.destination_hospital.longitude });
+  }
+  if (pts.length === 0) return;
+
+  let minLat = Math.min(...pts.map((p) => p.lat));
+  let maxLat = Math.max(...pts.map((p) => p.lat));
+  let minLng = Math.min(...pts.map((p) => p.lng));
+  let maxLng = Math.max(...pts.map((p) => p.lng));
+  if (maxLat - minLat < 0.001) { minLat -= 0.0005; maxLat += 0.0005; }
+  if (maxLng - minLng < 0.001) { minLng -= 0.0005; maxLng += 0.0005; }
+  const pad = 24;
+  const sx = (lng) => pad + ((lng - minLng) / (maxLng - minLng)) * (W - pad * 2);
+  const sy = (lat) => H - pad - ((lat - minLat) / (maxLat - minLat)) * (H - pad * 2);
+
+  if (state.route) {
+    const a = { x: sx(state.route.start.lng), y: sy(state.route.start.lat) };
+    const b = { x: sx(state.route.dest.lng), y: sy(state.route.dest.lat) };
+    ctx.strokeStyle = "#9aa7b8";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const pos = routePosition();
+    const c = { x: sx(pos.lng), y: sy(pos.lat) };
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.strokeStyle = "#3b82f6";
+    ctx.stroke();
+
+    ctx.fillStyle = "#3b82f6";
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#7c3aed";
+  ctx.beginPath();
+  ctx.arc(sx(state.route ? state.route.dest.lng : pts[0].lng), sy(state.route ? state.route.dest.lat : pts[0].lat), 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.stroke();
+}
+
+// ---- Live events websocket (Feature 3) ----
+
+function connectEventsWs() {
+  disconnectEventsWs();
+  const proto = "bearer " + state.token;
+  try {
+    const ws = new WebSocket(`/ws/cases/${state.case.id}/events`, [proto]);
+    state.ws = ws;
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (_) { return; }
+      if (msg && msg.type === "event") refreshEncounter();
+    };
+    ws.onclose = () => { if (state.ws === ws) state.ws = null; };
+  } catch (_) { /* live updates optional */ }
+}
+
+function disconnectEventsWs() {
+  if (state.ws) {
+    try { state.ws.close(); } catch (_) { /* ignore */ }
+    state.ws = null;
+  }
+}
+
+async function refreshEncounter() {
+  if (!state.case) return;
+  try {
+    const [c, events] = await Promise.all([
+      api("GET", "/api/v1/cases/" + state.case.id),
+      api("GET", "/api/v1/cases/" + state.case.id + "/events"),
+    ]);
+    state.case = c;
+    state.events = events || [];
+    state.case.status = phaseFromEvents(state.events);
+    renderEncounterTimeline();
+    updateEncounterUI();
+    renderTransportInfo();
+    syncGpsEngine();
+  } catch (err) {
+    showError("Could not refresh encounter: " + err.message);
+  }
+}
+
+async function doTransition(eventType) {
+  let extra = {};
+  if (eventType === "transport_start") {
+    const chosen = $("dest-select").value;
+    if (chosen && chosen !== "__auto__") extra = { hospital_id: chosen };
+  }
+  try {
+    await enqueueTransition(eventType, extra);
+  } catch (err) {
+    showError("Transition queue write failed: " + err.message);
+    return;
+  }
+  applyLocalTransition(eventType);
+  if (state.network === "online") {
+    await runFlush();
+  } else {
+    await updateOfflineUI();
+  }
+  syncGpsEngine();
+  if (eventType === "case_closed" && state.running) stopMonitoring();
+  if (eventType === "case_closed") disconnectEventsWs();
+}
+
+// ---- Wire up ----
+
+if (typeof document !== "undefined") {
+  $("login-form").addEventListener("submit", login);
+  $("patient-form").addEventListener("submit", createPatient);
+  $("case-form").addEventListener("submit", createCase);
+  $("start-btn").addEventListener("click", startMonitoring);
+  $("deteriorate-btn").addEventListener("click", simulateDeterioration);
+  $("stop-btn").addEventListener("click", stopMonitoring);
+  $("offline-btn").addEventListener("click", () => setOffline(!state.simOffline));
+  $("btn-scene").addEventListener("click", () => doTransition("scene_arrival"));
+  $("btn-transport").addEventListener("click", () => doTransition("transport_start"));
+  $("btn-hospital").addEventListener("click", () => doTransition("hospital_arrival"));
+  $("btn-close").addEventListener("click", () => doTransition("case_closed"));
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { HlcTimestamp, HlcClock, hlcCmp, MAX_ATTEMPTS };
+}
+
