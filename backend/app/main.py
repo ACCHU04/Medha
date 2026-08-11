@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .database import engine
-from .routes import ambulances, auth, cases, ecg, hospitals, patients, sync, vitals, ws
+from .routes import ambulances, auth, cases, ecg, handover, hospitals, patients, sync, vitals, ws
 
 app = FastAPI(title="MEDHA LINK Backend", version="0.1.0")
 
@@ -16,6 +16,7 @@ app.include_router(patients.router)
 app.include_router(ambulances.router)
 app.include_router(cases.router)
 app.include_router(ecg.router)
+app.include_router(handover.router)
 app.include_router(vitals.router)
 app.include_router(sync.router)
 app.include_router(ws.router)
