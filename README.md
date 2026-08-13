@@ -1,60 +1,104 @@
-# MEDHA LINK
+<div align="center">
 
-Real-time emergency response and pre-hospital care coordination platform that connects ambulances, hospital staff, and doctors around a single, continuously-updated patient encounter.
+<!-- MEDHA LINK — 3D extruded wordmark with ECG pulse (inline SVG, no external files) -->
+<svg viewBox="0 0 1200 320" width="720" height="auto" role="img" aria-label="MEDHA LINK" xmlns="http://www.w3.org/2000/svg">
+  <title>MEDHA LINK</title>
+  <defs>
+    <linearGradient id="gradMedha" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cbe9ff"/>
+      <stop offset="0.28" stop-color="#8ecbff"/>
+      <stop offset="0.62" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="gradLink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b6f3ff"/>
+      <stop offset="0.55" stop-color="#38c8e8"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="gradPulse" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fca5a5"/>
+      <stop offset="0.5" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#020617" flood-opacity="0.45"/>
+    </filter>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ef4444" flood-opacity="0.85"/>
+    </filter>
+  </defs>
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
-![WebSocket](https://img.shields.io/badge/Realtime-WebSocket-4F46E5)
-![JWT](https://img.shields.io/badge/Auth-JWT%20Bearer-E0234E)
-![License](https://img.shields.io/badge/License-Proprietary-lightgrey)
+  <!-- ECG trace -->
+  <g filter="url(#glow)">
+    <polyline points="80,270 500,270 518,263 536,252 552,270 574,270 590,256 604,238 618,270 638,270 652,259 666,270 1120,270"
+              fill="none" stroke="url(#gradPulse)" stroke-width="5"
+              stroke-linejoin="round" stroke-linecap="round"
+              stroke-dasharray="1120">
+      <animate attributeName="stroke-dashoffset" from="1120" to="0" dur="3s" fill="freeze"/>
+    </polyline>
+  </g>
+  <circle cx="604" cy="238" r="6" fill="#f87171" filter="url(#glow)">
+    <animate attributeName="r" values="4.5;7;4.5" dur="1.6s" repeatCount="indefinite"/>
+  </circle>
 
----
+  <!-- MEDHA — extruded depth -->
+  <g font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="128" font-weight="800" letter-spacing="4" x="600" y="120" text-anchor="middle">
+    <text transform="translate(12.8,12.8)" fill="#04101f">MEDHA</text>
+    <text transform="translate(11.2,11.2)" fill="#071731">MEDHA</text>
+    <text transform="translate(9.6,9.6)" fill="#0a1f43">MEDHA</text>
+    <text transform="translate(8,8)" fill="#0d2755">MEDHA</text>
+    <text transform="translate(6.4,6.4)" fill="#102f67">MEDHA</text>
+    <text transform="translate(4.8,4.8)" fill="#133779">MEDHA</text>
+    <text transform="translate(3.2,3.2)" fill="#163f8b">MEDHA</text>
+    <text transform="translate(1.6,1.6)" fill="#19479d">MEDHA</text>
+    <text fill="url(#gradMedha)" filter="url(#drop)">MEDHA</text>
+  </g>
 
-## Table of Contents
+  <!-- LINK — extruded depth -->
+  <g font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="74" font-weight="800" letter-spacing="12" x="600" y="228" text-anchor="middle">
+    <text transform="translate(9.6,9.6)" fill="#06313f">LINK</text>
+    <text transform="translate(8.4,8.4)" fill="#08394a">LINK</text>
+    <text transform="translate(7.2,7.2)" fill="#0a4155">LINK</text>
+    <text transform="translate(6,6)" fill="#0c4960">LINK</text>
+    <text transform="translate(4.8,4.8)" fill="#0e516b">LINK</text>
+    <text transform="translate(3.6,3.6)" fill="#105976">LINK</text>
+    <text transform="translate(2.4,2.4)" fill="#126181">LINK</text>
+    <text transform="translate(1.2,1.2)" fill="#14698c">LINK</text>
+    <text fill="url(#gradLink)" filter="url(#drop)">LINK</text>
+  </g>
+</svg>
 
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Repository Structure](#repository-structure)
-- [Getting Started](#getting-started)
-- [Demo Access](#demo-access)
-- [MEDHA AI Assistant](#medha-ai-assistant)
-- [Testing](#testing)
-- [API Documentation](#api-documentation)
-- [Project Status & Roadmap](#project-status--roadmap)
-- [License](#license)
+**Real-time emergency response and pre-hospital care coordination — from the ambulance to the hospital bed, live.**
+
+</div>
 
 ---
 
 ## Overview
 
-MEDHA LINK is a single command-and-control workflow for emergency medical response:
+MEDHA LINK keeps everyone on the same page during an emergency: the paramedic in the ambulance, the hospital staff waiting at the other end, and the doctors coordinating the response.
 
-1. A **paramedic** creates a patient encounter in the ambulance simulator and starts streaming vitals.
-2. The **hospital dashboard** sees the case and live vitals in real time, with deterioration events surfacing immediately.
-3. A **doctor or hospital admin** can accept, decline, or prepare for the case before arrival.
-4. On arrival, a structured digital **handover** (with optional FHIR R4 / CDA export) closes the loop.
+1. A **paramedic** creates a patient encounter and starts streaming vitals from the ambulance simulator.
+2. The **hospital dashboard** sees the case instantly — live vitals, deterioration alerts, no refresh required.
+3. A **doctor or hospital admin** accepts, declines, or prepares for the case before the ambulance arrives.
+4. When the crew gets there, a structured digital **handover** (FHIR R4 / CDA export optional) closes the loop.
 
-The entire loop is driven by a FastAPI backend with PostgreSQL persistence, WebSocket realtime, an offline-first sync layer, and — new in Phase 1 — a bilingual voice/text **AI assistant** embedded directly in both web UIs.
+Everything runs on a FastAPI backend with PostgreSQL, WebSocket realtime, and an offline-first sync layer. New in Phase 1: a bilingual voice + text **AI assistant** lives right inside both UIs.
 
-> **Synthetic data only.** All patient data is generated locally for development and testing. Never use with real patient information.
+> **Heads up — synthetic data only.** Everything here is generated locally for development and testing. Never use it with real patient information.
 
 ---
 
-## Key Features
+## Key features
 
-| Area | What it does |
-| --- | --- |
-| **Realtime vitals** | Paramedic streams heart rate, SpO₂, blood pressure, temperature, and respiration rate; hospital dashboard updates live over WebSocket and flags deterioration. |
-| **Encounter lifecycle** | Cases move through states — created → assigned → en route → arrived → handover complete — via `accept`, `decline`, `prepare`, and transition endpoints. |
-| **Paper ECG digitization** | Offline image capture, AI-assisted extraction of the ECG tracing, sync to backend, and viewing on the hospital dashboard. |
-| **Route & mapping** | Shared geometry engine (`medha/route.js`): haversine distances, polyline interpolation, OSRM routing with an offline straight-line fallback, rendered on a Leaflet map. |
-| **Digital handover** | Structured handover record with vitals replay, plus export as a **FHIR R4 bundle** or **CDA XML** (NABH-aligned). |
-| **Offline-first sync** | Pull/push sync layer with operation queues so mobile clients can work disconnected and reconcile later. |
-| **Auth & roles** | JWT bearer auth with `paramedic`, `doctor`, and `hospital_admin` roles. |
-| **MEDHA AI assistant** | Voice (en-IN / hi-IN) and text assistant embedded in both UIs — fills patient/case forms, triggers actions, answers live-state questions, and reads replies aloud (TTS). |
+- **Live vitals** — heart rate, SpO₂, blood pressure, temperature, and respiration stream from the ambulance to the hospital over WebSocket; deterioration surfaces the moment it happens.
+- **Encounter lifecycle** — cases move through created → assigned → en route → arrived → handover complete via `accept`, `decline`, `prepare`, and transition endpoints.
+- **Paper ECG digitization** — capture the tracing offline, extract it, sync it to the backend, and view it on the hospital dashboard.
+- **Route & mapping** — a shared geometry engine (`medha/route.js`): haversine distances, polyline interpolation, OSRM routing with an offline straight-line fallback, drawn on a Leaflet map.
+- **Digital handover** — a structured record with vitals replay, exportable as a **FHIR R4 bundle** or **CDA XML**.
+- **Offline-first sync** — pull/push queues let clients work disconnected and reconcile when they reconnect.
+- **Auth & roles** — JWT bearer auth with `paramedic`, `doctor`, and `hospital_admin` roles.
+- **MEDHA AI assistant** — bilingual (en-IN / hi-IN) voice + text; fills patient and case forms, triggers actions, answers live-state questions, and reads replies aloud.
 
 ---
 
@@ -95,7 +139,7 @@ Hospital dashboard ──live updates──►  Paramedic / Doctor / Admin
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 | --- | --- |
@@ -111,7 +155,7 @@ Hospital dashboard ──live updates──►  Paramedic / Doctor / Admin
 
 ---
 
-## Repository Structure
+## Repository structure
 
 ```text
 medha-link/
@@ -143,17 +187,17 @@ medha-link/
 └── README.md
 ```
 
-The four placeholder directories (`ai-engine`, `ambulance-app`, `doctor-console`, `hospital-dashboard`) hold only a README for now. Phase-1 UI lives in `backend/app/static/`; these directories graduate into real apps in later phases.
+The four placeholder directories (`ai-engine`, `ambulance-app`, `doctor-console`, `hospital-dashboard`) hold only a README for now. Phase-1 UI lives in `backend/app/static/`; they'll become real apps in later phases.
 
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 - **Docker** (with Compose) — for PostgreSQL 16
 - **Python 3.11+**
-- **Node.js 18+** — optional, only required for the headless JS contract tests
+- **Node.js 18+** — optional, only needed for the headless JS contract tests
 - `psql` client (optional, for quick DB checks)
 
 ### 1. Clone and configure
@@ -163,7 +207,7 @@ git clone <repo-url> medha-link
 cd medha-link
 ```
 
-Copy the environment template and set the values (the defaults below match `docker-compose.yml`):
+Copy the environment template and fill in the values (the defaults below already match `docker-compose.yml`):
 
 ```bash
 cp .env.example .env   # Windows: copy .env.example .env
@@ -235,7 +279,7 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## Demo Access
+## Demo access
 
 Use the seeded credentials:
 
@@ -255,7 +299,7 @@ Use the seeded credentials:
 
 ---
 
-## MEDHA AI Assistant
+## MEDHA AI assistant
 
 A bilingual (English / Hindi) assistant is embedded in both Phase-1 UIs. Open it with the **🤖** floating button, then chat by typing or by voice (click the 🎙 mic).
 
@@ -312,7 +356,7 @@ These are skipped automatically when `node` is not installed.
 
 ---
 
-## API Documentation
+## API documentation
 
 Interactive docs are served by FastAPI when the backend is running:
 
@@ -335,7 +379,7 @@ Interactive docs are served by FastAPI when the backend is running:
 
 ---
 
-## Project Status & Roadmap
+## Project status & roadmap
 
 **Phase 1 — complete** (monorepo build-out):
 
