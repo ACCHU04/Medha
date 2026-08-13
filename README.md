@@ -5,66 +5,69 @@
   <title>MEDHA LINK</title>
   <defs>
     <linearGradient id="gradMedha" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#cbe9ff"/>
-      <stop offset="0.28" stop-color="#8ecbff"/>
-      <stop offset="0.62" stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#1e40af"/>
+      <stop offset="0" stop-color="#eaf5ff"/>
+      <stop offset="0.22" stop-color="#9fc8ff"/>
+      <stop offset="0.6" stop-color="#3a78e8"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
     </linearGradient>
     <linearGradient id="gradLink" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#b6f3ff"/>
-      <stop offset="0.55" stop-color="#38c8e8"/>
-      <stop offset="1" stop-color="#0e7490"/>
+      <stop offset="0" stop-color="#d5f8ff"/>
+      <stop offset="0.45" stop-color="#4fd1f0"/>
+      <stop offset="1" stop-color="#0b7285"/>
     </linearGradient>
     <linearGradient id="gradPulse" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#fca5a5"/>
       <stop offset="0.5" stop-color="#ef4444"/>
       <stop offset="1" stop-color="#b91c1c"/>
     </linearGradient>
-    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#020617" flood-opacity="0.45"/>
-    </filter>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ef4444" flood-opacity="0.85"/>
-    </filter>
   </defs>
 
-  <!-- ECG trace -->
-  <g filter="url(#glow)">
-    <polyline points="80,270 500,270 518,263 536,252 552,270 574,270 590,256 604,238 618,270 638,270 652,259 666,270 1120,270"
-              fill="none" stroke="url(#gradPulse)" stroke-width="5"
+  <!-- ECG trace (double-stroked for a soft glow, no filters) -->
+  <g>
+    <polyline points="90,276 500,276 520,268 540,257 556,276 578,276 594,260 608,240 622,276 642,276 656,264 670,276 1110,276"
+              fill="none" stroke="#ef4444" stroke-opacity="0.3" stroke-width="14"
+              stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="90,276 500,276 520,268 540,257 556,276 578,276 594,260 608,240 622,276 642,276 656,264 670,276 1110,276"
+              fill="none" stroke="url(#gradPulse)" stroke-width="4.5"
               stroke-linejoin="round" stroke-linecap="round"
               stroke-dasharray="1120">
       <animate attributeName="stroke-dashoffset" from="1120" to="0" dur="3s" fill="freeze"/>
     </polyline>
+    <circle cx="608" cy="240" r="11" fill="#ef4444" opacity="0.25"/>
+    <circle cx="608" cy="240" r="6" fill="#f87171">
+      <animate attributeName="r" values="4.5;7;4.5" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
   </g>
-  <circle cx="604" cy="238" r="6" fill="#f87171" filter="url(#glow)">
-    <animate attributeName="r" values="4.5;7;4.5" dur="1.6s" repeatCount="indefinite"/>
-  </circle>
 
-  <!-- MEDHA — extruded depth -->
-  <g font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="128" font-weight="800" letter-spacing="4" x="600" y="120" text-anchor="middle">
-    <text transform="translate(12.8,12.8)" fill="#04101f">MEDHA</text>
-    <text transform="translate(11.2,11.2)" fill="#071731">MEDHA</text>
-    <text transform="translate(9.6,9.6)" fill="#0a1f43">MEDHA</text>
-    <text transform="translate(8,8)" fill="#0d2755">MEDHA</text>
-    <text transform="translate(6.4,6.4)" fill="#102f67">MEDHA</text>
-    <text transform="translate(4.8,4.8)" fill="#133779">MEDHA</text>
-    <text transform="translate(3.2,3.2)" fill="#163f8b">MEDHA</text>
-    <text transform="translate(1.6,1.6)" fill="#19479d">MEDHA</text>
-    <text fill="url(#gradMedha)" filter="url(#drop)">MEDHA</text>
+  <!-- MEDHA — extruded depth (dark base -> lighter toward the face) -->
+  <g transform="translate(600,132)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="132" font-weight="800" letter-spacing="6" text-anchor="middle">
+    <text transform="translate(0,22)" fill="#040b18">MEDHA</text>
+    <text transform="translate(0,20)" fill="#061126">MEDHA</text>
+    <text transform="translate(0,18)" fill="#081833">MEDHA</text>
+    <text transform="translate(0,16)" fill="#0a1f41">MEDHA</text>
+    <text transform="translate(0,14)" fill="#0c264f">MEDHA</text>
+    <text transform="translate(0,12)" fill="#0e2d5d">MEDHA</text>
+    <text transform="translate(0,10)" fill="#10346b">MEDHA</text>
+    <text transform="translate(0,8)" fill="#123b79">MEDHA</text>
+    <text transform="translate(0,6)" fill="#144287">MEDHA</text>
+    <text transform="translate(0,4)" fill="#164995">MEDHA</text>
+    <text transform="translate(0,2)" fill="#1850a3">MEDHA</text>
+    <text fill="url(#gradMedha)">MEDHA</text>
   </g>
 
   <!-- LINK — extruded depth -->
-  <g font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="74" font-weight="800" letter-spacing="12" x="600" y="228" text-anchor="middle">
-    <text transform="translate(9.6,9.6)" fill="#06313f">LINK</text>
-    <text transform="translate(8.4,8.4)" fill="#08394a">LINK</text>
-    <text transform="translate(7.2,7.2)" fill="#0a4155">LINK</text>
-    <text transform="translate(6,6)" fill="#0c4960">LINK</text>
-    <text transform="translate(4.8,4.8)" fill="#0e516b">LINK</text>
-    <text transform="translate(3.6,3.6)" fill="#105976">LINK</text>
-    <text transform="translate(2.4,2.4)" fill="#126181">LINK</text>
-    <text transform="translate(1.2,1.2)" fill="#14698c">LINK</text>
-    <text fill="url(#gradLink)" filter="url(#drop)">LINK</text>
+  <g transform="translate(600,240)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="74" font-weight="800" letter-spacing="16" text-anchor="middle">
+    <text transform="translate(0,20)" fill="#02141f">LINK</text>
+    <text transform="translate(0,18)" fill="#041d2b">LINK</text>
+    <text transform="translate(0,16)" fill="#062638">LINK</text>
+    <text transform="translate(0,14)" fill="#082f45">LINK</text>
+    <text transform="translate(0,12)" fill="#0a3852">LINK</text>
+    <text transform="translate(0,10)" fill="#0c415f">LINK</text>
+    <text transform="translate(0,8)" fill="#0e4a6c">LINK</text>
+    <text transform="translate(0,6)" fill="#105379">LINK</text>
+    <text transform="translate(0,4)" fill="#125c86">LINK</text>
+    <text transform="translate(0,2)" fill="#146593">LINK</text>
+    <text fill="url(#gradLink)">LINK</text>
   </g>
 </svg>
 
