@@ -1,73 +1,80 @@
 <div align="center">
 
-<!-- MEDHA LINK — 3D extruded wordmark with ECG pulse (inline SVG, no external files) -->
-<svg viewBox="0 0 1200 320" width="720" height="auto" role="img" aria-label="MEDHA LINK" xmlns="http://www.w3.org/2000/svg">
+<!-- MEDHA LINK — glassmorphism heading (inline SVG, no external files) -->
+<svg viewBox="0 0 1200 300" width="720" height="auto" role="img" aria-label="MEDHA LINK" xmlns="http://www.w3.org/2000/svg">
   <title>MEDHA LINK</title>
   <defs>
-    <linearGradient id="gradMedha" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#eaf5ff"/>
-      <stop offset="0.22" stop-color="#9fc8ff"/>
-      <stop offset="0.6" stop-color="#3a78e8"/>
+    <radialGradient id="blobCyan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </radialGradient>
+    <radialGradient id="blobBlue" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3b82f6"/>
       <stop offset="1" stop-color="#1e3a8a"/>
+    </radialGradient>
+    <radialGradient id="blobRed" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f87171"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </radialGradient>
+    <radialGradient id="blobPurple" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </radialGradient>
+    <linearGradient id="gradMedha" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
     </linearGradient>
     <linearGradient id="gradLink" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#d5f8ff"/>
-      <stop offset="0.45" stop-color="#4fd1f0"/>
-      <stop offset="1" stop-color="#0b7285"/>
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#bae6fd"/>
     </linearGradient>
-    <linearGradient id="gradPulse" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#fca5a5"/>
-      <stop offset="0.5" stop-color="#ef4444"/>
-      <stop offset="1" stop-color="#b91c1c"/>
-    </linearGradient>
+    <filter id="blur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <filter id="textShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.4"/>
+    </filter>
+    <filter id="panelShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.28"/>
+    </filter>
   </defs>
 
-  <!-- ECG trace (double-stroked for a soft glow, no filters) -->
+  <!-- Colourful blurred blobs behind the glass -->
+  <g filter="url(#blur)">
+    <circle cx="160" cy="70" r="170" fill="url(#blobBlue)" opacity="0.55"/>
+    <circle cx="1050" cy="60" r="160" fill="url(#blobCyan)" opacity="0.5"/>
+    <circle cx="350" cy="180" r="150" fill="url(#blobCyan)" opacity="0.55"/>
+    <circle cx="880" cy="200" r="150" fill="url(#blobBlue)" opacity="0.5"/>
+    <circle cx="600" cy="290" r="185" fill="url(#blobRed)" opacity="0.42"/>
+    <circle cx="150" cy="250" r="140" fill="url(#blobPurple)" opacity="0.35"/>
+  </g>
+
+  <!-- Frosted glass panel -->
   <g>
-    <polyline points="90,276 500,276 520,268 540,257 556,276 578,276 594,260 608,240 622,276 642,276 656,264 670,276 1110,276"
-              fill="none" stroke="#ef4444" stroke-opacity="0.3" stroke-width="14"
-              stroke-linejoin="round" stroke-linecap="round"/>
-    <polyline points="90,276 500,276 520,268 540,257 556,276 578,276 594,260 608,240 622,276 642,276 656,264 670,276 1110,276"
-              fill="none" stroke="url(#gradPulse)" stroke-width="4.5"
-              stroke-linejoin="round" stroke-linecap="round"
-              stroke-dasharray="1120">
-      <animate attributeName="stroke-dashoffset" from="1120" to="0" dur="3s" fill="freeze"/>
-    </polyline>
-    <circle cx="608" cy="240" r="11" fill="#ef4444" opacity="0.25"/>
-    <circle cx="608" cy="240" r="6" fill="#f87171">
-      <animate attributeName="r" values="4.5;7;4.5" dur="1.6s" repeatCount="indefinite"/>
-    </circle>
+    <rect x="70" y="32" width="1060" height="236" rx="26"
+          fill="#ffffff" opacity="0.14" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"
+          filter="url(#panelShadow)"/>
+    <rect x="70" y="32" width="1060" height="2" rx="1" fill="#ffffff" opacity="0.7"/>
+    <rect x="78" y="38" width="1044" height="26" rx="13" fill="#ffffff" opacity="0.08"/>
   </g>
 
-  <!-- MEDHA — extruded depth (dark base -> lighter toward the face) -->
-  <g transform="translate(600,132)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="132" font-weight="800" letter-spacing="6" text-anchor="middle">
-    <text transform="translate(0,22)" fill="#040b18">MEDHA</text>
-    <text transform="translate(0,20)" fill="#061126">MEDHA</text>
-    <text transform="translate(0,18)" fill="#081833">MEDHA</text>
-    <text transform="translate(0,16)" fill="#0a1f41">MEDHA</text>
-    <text transform="translate(0,14)" fill="#0c264f">MEDHA</text>
-    <text transform="translate(0,12)" fill="#0e2d5d">MEDHA</text>
-    <text transform="translate(0,10)" fill="#10346b">MEDHA</text>
-    <text transform="translate(0,8)" fill="#123b79">MEDHA</text>
-    <text transform="translate(0,6)" fill="#144287">MEDHA</text>
-    <text transform="translate(0,4)" fill="#164995">MEDHA</text>
-    <text transform="translate(0,2)" fill="#1850a3">MEDHA</text>
-    <text fill="url(#gradMedha)">MEDHA</text>
+  <!-- Subtle ECG accent inside the glass -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="140,236 700,236 720,228 740,217 756,236 780,236 796,218 812,198 828,236 852,236 868,225 884,236 1060,236"
+              stroke="#fca5a5" stroke-opacity="0.5" stroke-width="8"/>
+    <polyline points="140,236 700,236 720,228 740,217 756,236 780,236 796,218 812,198 828,236 852,236 868,225 884,236 1060,236"
+              stroke="#f87171" stroke-opacity="0.85" stroke-width="3"/>
+    <circle cx="812" cy="198" r="4" fill="#f87171" opacity="0.9"/>
   </g>
 
-  <!-- LINK — extruded depth -->
-  <g transform="translate(600,240)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="74" font-weight="800" letter-spacing="16" text-anchor="middle">
-    <text transform="translate(0,20)" fill="#02141f">LINK</text>
-    <text transform="translate(0,18)" fill="#041d2b">LINK</text>
-    <text transform="translate(0,16)" fill="#062638">LINK</text>
-    <text transform="translate(0,14)" fill="#082f45">LINK</text>
-    <text transform="translate(0,12)" fill="#0a3852">LINK</text>
-    <text transform="translate(0,10)" fill="#0c415f">LINK</text>
-    <text transform="translate(0,8)" fill="#0e4a6c">LINK</text>
-    <text transform="translate(0,6)" fill="#105379">LINK</text>
-    <text transform="translate(0,4)" fill="#125c86">LINK</text>
-    <text transform="translate(0,2)" fill="#146593">LINK</text>
-    <text fill="url(#gradLink)">LINK</text>
+  <!-- MEDHA — glass name -->
+  <g transform="translate(600,124)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="118" font-weight="800" letter-spacing="4" text-anchor="middle">
+    <text fill="url(#gradMedha)" filter="url(#textShadow)">MEDHA</text>
+  </g>
+
+  <!-- LINK — glass name -->
+  <g transform="translate(600,214)" font-family="system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="64" font-weight="700" letter-spacing="18" text-anchor="middle">
+    <text fill="url(#gradLink)" filter="url(#textShadow)">LINK</text>
   </g>
 </svg>
 
