@@ -7,8 +7,10 @@ from ..dependencies import CurrentUser, DbSession, require_role
 from ..models import User
 from ..models.enums import UserRole
 from ..schemas.vital import VitalCreate, VitalOut
+from ..services import case as case_service
+from ..services import risk as risk_service
 from ..services import vital as vital_service
-from ..services.realtime import broadcast_vital
+from ..services.realtime import broadcast_case_event, broadcast_vital
 
 router = APIRouter(prefix="/api/v1/cases", tags=["vitals"])
 
@@ -30,6 +32,15 @@ async def create_vital(
 ) -> VitalOut:
     vital = vital_service.create_vital(db, case_id, payload, _paramedic)
     await broadcast_vital(case_id, vital)
+
+    case = vital_service.get_case_or_404(db, case_id)
+    event = risk_service.evaluate_and_persist_risk(
+        db, case, vital, payload.suspected_infection
+    )
+    if event is not None:
+        db.commit()
+        serialized = case_service.serialize_case(db, case)
+        await broadcast_case_event(case_id, event, serialized.model_dump(mode="json"))
     return vital
 
 

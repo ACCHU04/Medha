@@ -12,8 +12,7 @@ from ..models.enums import (
     CaseSeverity,
     CaseStatus,
 )
-from .eta import nearest_hospital
-
+from .routing import recommend_hospital
 
 class TransitionRejected(Exception):
     """Lifecycle rule violation. REST maps to 409; sync maps to a skip."""
@@ -98,10 +97,10 @@ def apply_transition(
                 raise TransitionRejected("destination hospital not found")
             case.hospital_id = hospital.id
         elif case.hospital_id is None:
-            # Fallback: nearest hospital with coordinates.
-            hospital = nearest_hospital(db, case)
-            if hospital is not None:
-                case.hospital_id = hospital.id
+            # Fallback: specialty-aware nearest hospital with coordinates.
+            recommended = recommend_hospital(db, case)
+            if recommended is not None:
+                case.hospital_id = recommended.hospital.id
         if route is not None:
             case.route_geojson = route
     elif hospital_id is not None:

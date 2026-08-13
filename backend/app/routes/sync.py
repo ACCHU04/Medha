@@ -52,6 +52,14 @@ async def sync_push(
         case = case_service.get_case(db, event.case_id)
         serialized = case_service.serialize_case(db, case)
         await broadcast_case_event(event.case_id, event, serialized.model_dump(mode="json"))
+    for event in outcome.risk_events:
+        case = case_service.get_case(db, event.case_id)
+        serialized = case_service.serialize_case(db, case)
+        await broadcast_case_event(event.case_id, event, serialized.model_dump(mode="json"))
+    for event in outcome.prepare_events:
+        case = case_service.get_case(db, event.case_id)
+        serialized = case_service.serialize_case(db, case)
+        await broadcast_case_event(event.case_id, event, serialized.model_dump(mode="json"))
     for point in outcome.gps:
         await broadcast_gps(point.case_id, point)
     return SyncPushResponse(

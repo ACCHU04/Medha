@@ -143,7 +143,11 @@ def test_push_idempotent_replay(client: TestClient):
         assert db.query(Patient).count() == 1
         assert db.query(EmergencyCase).count() == 1
         assert db.query(Vital).count() == 1
-        assert db.query(CaseEvent).count() == 1
+        # scene_arrival + the risk_changed baseline from the vital snapshot.
+        assert db.query(CaseEvent).count() == 2
+        assert (
+            db.query(CaseEvent).filter_by(event_type="risk_changed").count() == 1
+        )
     finally:
         db.close()
 
@@ -466,8 +470,9 @@ def test_pull_paramedic_isolated(client: TestClient):
 
     seen_a = client.get("/api/v1/sync/changes", headers=_auth(token_a)).json()["changes"]
     seen_b = client.get("/api/v1/sync/changes", headers=_auth(token_b)).json()["changes"]
-    assert len(seen_a) == 4
-    assert len(seen_b) == 4
+    # 4 ops + the risk_changed baseline event each batch now syncs to devices.
+    assert len(seen_a) == 5
+    assert len(seen_b) == 5
     ids_a = {c["id"] for c in seen_a}
     ids_b = {c["id"] for c in seen_b}
     assert ids_a.isdisjoint(ids_b)

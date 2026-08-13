@@ -721,6 +721,9 @@ function renderEncounterTimeline() {
   for (const ev of state.events) {
     const li = document.createElement("li");
     const meta = LIFECYCLE_EVENTS[ev.event_type] || { icon: "•", label: ev.event_type.replace("_", " ") };
+    if (ev.event_type === "hospital_prepare" && ev.payload && ev.payload.auto) {
+      meta.label = "Auto-prepared (geofence)";
+    }
     const time = new Date(ev.created_at).toLocaleTimeString();
     li.innerHTML = `<span class="t-icon">${meta.icon}</span><span>${meta.label}</span><time>${time}</time>`;
     ol.appendChild(li);
@@ -811,7 +814,9 @@ function renderTransportInfo() {
   const acc = state.case.acceptance;
   const accEl = $("t-accept");
   if (state.case.prepared_at) {
-    accEl.textContent = "🛏 READY FOR ARRIVAL";
+    accEl.textContent = state.case.preparation_notes && state.case.preparation_notes.auto
+      ? "🛏 READY FOR ARRIVAL (auto)"
+      : "🛏 READY FOR ARRIVAL";
     accEl.className = "badge ready";
   } else if (ACCEPT_LABELS[acc]) {
     accEl.textContent = ACCEPT_LABELS[acc];

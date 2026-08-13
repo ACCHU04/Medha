@@ -235,7 +235,9 @@ function renderTransport(c) {
 
   const accEl = $("t-accept");
   if (c.prepared_at) {
-    accEl.textContent = "READY FOR ARRIVAL";
+    accEl.textContent = c.preparation_notes && c.preparation_notes.auto
+      ? "READY FOR ARRIVAL · AUTO"
+      : "READY FOR ARRIVAL";
     accEl.className = "badge ready";
   } else if (c.acceptance === "accepted") {
     accEl.textContent = "ACCEPTED";
@@ -700,6 +702,14 @@ const EVENT_META = {
   ecg_added: { icon: "🧾", label: "Digitized ECG added" },
 };
 
+function eventLabel(ev) {
+  const meta = EVENT_META[ev.event_type] || { icon: "•", label: ev.event_type.replace("_", " ") };
+  if (ev.event_type === "hospital_prepare" && ev.payload && ev.payload.auto) {
+    return { icon: meta.icon, label: "Auto-prepared (geofence)" };
+  }
+  return meta;
+}
+
 function renderTimeline() {
   const ol = $("case-timeline");
   if (!state.events.length) {
@@ -707,7 +717,7 @@ function renderTimeline() {
     return;
   }
   ol.innerHTML = state.events.map((ev) => {
-    const meta = EVENT_META[ev.event_type] || { icon: "•", label: ev.event_type.replace("_", " ") };
+    const meta = eventLabel(ev);
     const time = new Date(ev.created_at).toLocaleTimeString();
     return `<li><span class="t-icon">${meta.icon}</span><span>${meta.label}</span><time>${time}</time></li>`;
   }).join("");

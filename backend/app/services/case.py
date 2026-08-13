@@ -17,11 +17,12 @@ from ..models import (
 )
 from ..models.enums import CaseAcceptance, CaseEventType, CaseStatus
 from ..schemas.ambulance import AmbulanceOut
-from ..schemas.case import CaseCreate, CaseOut
+from ..schemas.case import AlternativeHospital, CaseCreate, CaseOut, RecommendationOut
 from ..schemas.hospital import HospitalOut
 from ..schemas.patient import PatientOut
 from .device import validate_owned_device
-from .eta import case_eta_minutes, case_eta_minutes_from_point, nearest_hospital
+from .eta import case_eta_minutes, case_eta_minutes_from_point
+from .routing import recommend_hospital
 
 _LOAD_DETAILS = (
     selectinload(EmergencyCase.patient),
@@ -123,6 +124,33 @@ def _latest_gps_by_case(
     return {point.case_id: point for point in rows}
 
 
+def _serialize_recommendation(
+    db: Session, case: EmergencyCase
+) -> RecommendationOut | None:
+    """'Why this hospital?' payload. Computed only when there is no locked
+    destination (pre-transport) or after a decline (recommended fallback)."""
+    if case.hospital_id is not None and case.recommended_hospital_id is None:
+        return None
+    # After a decline the fallback was computed excluding the current
+    # destination; recompute with the same exclusion so the payload agrees
+    # with the stored recommended_hospital_id.
+    rec = recommend_hospital(db, case, exclude_id=case.hospital_id)
+    if rec is None:
+        return None
+    return RecommendationOut(
+        hospital=HospitalOut.model_validate(rec.hospital),
+        matched_capabilities=rec.matched_capabilities,
+        distance_km=round(rec.distance_km, 2),
+        alternatives=[
+            AlternativeHospital(
+                hospital=HospitalOut.model_validate(hospital),
+                distance_km=round(km, 2),
+            )
+            for hospital, km in rec.alternatives
+        ],
+    )
+
+
 def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> CaseOut:
     """Build a CaseOut, computing the prototype ETA when a destination + fix exist."""
     return CaseOut(
@@ -154,6 +182,7 @@ def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> 
             if case.recommended_hospital
             else None
         ),
+        recommendation=_serialize_recommendation(db, case),
         eta_minutes=eta if eta is not None else case_eta_minutes(db, case),
     )
 
@@ -250,16 +279,26 @@ def decline_case(
     case.decision_at = _utcnow()
     case.decline_reason = reason
 
-    recommended = nearest_hospital(db, case, exclude_id=case.hospital_id)
-    case.recommended_hospital_id = recommended.id if recommended else None
+    recommended = recommend_hospital(db, case, exclude_id=case.hospital_id)
+    case.recommended_hospital_id = recommended.hospital.id if recommended else None
     event = CaseEvent(
         case_id=case.id,
         event_type=CaseEventType.hospital_decline,
         payload={
             "hospital_id": str(hospital.id) if hospital else None,
             "hospital_name": hospital.name if hospital else None,
-            "recommended_hospital_id": str(recommended.id) if recommended else None,
-            "recommended_hospital_name": recommended.name if recommended else None,
+            "recommended_hospital_id": (
+                str(recommended.hospital.id) if recommended else None
+            ),
+            "recommended_hospital_name": (
+                recommended.hospital.name if recommended else None
+            ),
+            "recommended_capabilities": (
+                recommended.matched_capabilities if recommended else []
+            ),
+            "recommended_distance_km": (
+                round(recommended.distance_km, 2) if recommended else None
+            ),
             "reason": reason,
             "by": user.username,
         },
@@ -272,14 +311,23 @@ def decline_case(
 def prepare_case(
     db: Session,
     case: EmergencyCase,
-    user: User,
+    user: User | None = None,
     *,
+    auto: bool = False,
     bed_type: str | None = None,
     team_leader: str | None = None,
     notes: str | None = None,
     eta_minutes: int | None = None,
+    device_id=None,
+    hlc: str | None = None,
 ) -> CaseEvent:
-    """Hospital readies a bed/team ahead of arrival (accept first)."""
+    """Hospital readies a bed/team ahead of arrival (accept first).
+
+    ``auto=True`` marks a geofence-triggered preparation (the geofence module
+    pre-checks the guards, so a race conflict is a silent no-op there); the
+    event payload then carries ``"auto": true`` and ``by`` falls back to
+    ``"geofence"`` when no user acts.
+    """
     _guard_transporting(case)
     if case.acceptance_status != CaseAcceptance.accepted:
         raise HTTPException(
@@ -296,6 +344,7 @@ def prepare_case(
         "team_leader": team_leader,
         "notes": notes,
         "eta_minutes": eta_minutes,
+        "auto": auto,
     }
     event = CaseEvent(
         case_id=case.id,
@@ -305,8 +354,11 @@ def prepare_case(
             "team_leader": team_leader,
             "notes": notes,
             "eta_minutes": eta_minutes,
-            "by": user.username,
+            "auto": auto,
+            "by": user.username if user else "geofence",
         },
+        device_id=device_id,
+        hlc=hlc,
         created_at=_utcnow(),
     )
     db.add(event)

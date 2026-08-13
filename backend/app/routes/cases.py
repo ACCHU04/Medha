@@ -14,6 +14,7 @@ from ..schemas.case_event import CaseEventOut
 from ..schemas.gps import GpsCreate, GpsOut
 from ..schemas.transition import TransitionCreate, TransitionOut
 from ..services import case as case_service
+from ..services import geofence
 from ..services.case_lifecycle import TransitionRejected, apply_transition
 from ..services.realtime import broadcast_case_event, broadcast_gps
 
@@ -158,6 +159,12 @@ async def create_gps(
     db.commit()
     db.refresh(point)
     await broadcast_gps(case.id, point)
+    event = geofence.maybe_auto_prepare(db, case, point)
+    if event is not None:
+        db.commit()
+        case = case_service.get_case(db, case_id)
+        serialized = case_service.serialize_case(db, case)
+        await broadcast_case_event(case.id, event, serialized.model_dump(mode="json"))
     return point
 
 

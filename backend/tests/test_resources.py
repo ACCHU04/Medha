@@ -89,14 +89,14 @@ def _create_patient(client, token, idx=0):
     return resp.json()
 
 
-def _create_case(client, token, patient_id, ambulance_id, idx=0):
+def _create_case(client, token, patient_id, ambulance_id, idx=0, complaint=None):
     resp = client.post(
         "/api/v1/cases",
         headers=_auth(token),
         json={
             "patient_id": str(patient_id),
             "ambulance_id": str(ambulance_id),
-            "chief_complaint": f"Complaint {idx}",
+            "chief_complaint": complaint or f"Complaint {idx}",
             "severity": "high",
         },
     )

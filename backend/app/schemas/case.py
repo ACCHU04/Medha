@@ -19,6 +19,20 @@ class CaseCreate(BaseModel):
     severity: CaseSeverity | None = None
 
 
+class AlternativeHospital(BaseModel):
+    hospital: HospitalOut
+    distance_km: float
+
+
+class RecommendationOut(BaseModel):
+    """The 'Why this hospital?' payload for specialty routing."""
+
+    hospital: HospitalOut
+    matched_capabilities: list[str]
+    distance_km: float
+    alternatives: list[AlternativeHospital] = []
+
+
 class CaseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,4 +58,5 @@ class CaseOut(BaseModel):
     ambulance: AmbulanceOut | None = None
     destination_hospital: HospitalOut | None = None
     recommended_hospital: HospitalOut | None = None
+    recommendation: RecommendationOut | None = None
     eta_minutes: int | None = None

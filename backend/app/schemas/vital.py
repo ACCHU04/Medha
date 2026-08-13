@@ -18,6 +18,8 @@ class VitalCreate(BaseModel):
     temperature: float | None = Field(default=None, ge=30, le=45)
     respiratory_rate: int | None = Field(default=None, ge=0, le=100)
     source: VitalSource = VitalSource.simulated
+    # Payload-only (no table column): feeds SIRS screening at ingress.
+    suspected_infection: bool | None = None
 
 
 class VitalOut(BaseModel):

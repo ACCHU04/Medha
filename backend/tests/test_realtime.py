@@ -57,6 +57,14 @@ def _connect(client, token, case_id):
     return client.websocket_connect(_ws_path(case_id), subprotocols=[token])
 
 
+def _receive_vital(ws):
+    """Skip the risk_changed/event broadcasts that share the case channel."""
+    while True:
+        msg = ws.receive_json()
+        if isinstance(msg, dict) and "heart_rate" in msg:
+            return msg
+
+
 # ---- Connection ----
 
 
@@ -180,7 +188,7 @@ def test_ws_deterioration_step_change(client: TestClient):
             headers=_auth(para_token),
             json=VITALS_NORMAL,
         )
-        normal = ws.receive_json()
+        normal = _receive_vital(ws)
         assert normal["heart_rate"] == 118
         assert normal["spo2"] == 91
         assert normal["systolic_bp"] == 90
@@ -192,7 +200,7 @@ def test_ws_deterioration_step_change(client: TestClient):
             headers=_auth(para_token),
             json=VITALS_CRITICAL,
         )
-        critical = ws.receive_json()
+        critical = _receive_vital(ws)
         assert critical["heart_rate"] == 142
         assert critical["spo2"] == 84
         assert critical["systolic_bp"] == 78

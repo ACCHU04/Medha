@@ -319,7 +319,7 @@ UI shows only `🟢 ONLINE / ✓ SYNCED` or `🟠 OFFLINE / N RECORDS QUEUED`. N
 - Offline: `OFFLINE · 7 records queued · Last sync 42s ago`
 
 ## IV. Explainable risk
-`NEWS2-5: 7 · HIGH · Main contributors: SpO₂ ↓ · RR ↑ · Clinician review required`
+`NEWS2-5: 7 · HIGH · Main contributors: RR ↑ · SpO₂ ↓ · Pulse ↑ · Clinician review required`
 
 ## V. Pre-arrival readiness score
 ```text

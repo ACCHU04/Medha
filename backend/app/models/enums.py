@@ -52,3 +52,4 @@ class CaseEventType(str, enum.Enum):
     hospital_decline = "hospital_decline"
     hospital_prepare = "hospital_prepare"
     ecg_added = "ecg_added"
+    risk_changed = "risk_changed"

@@ -34,6 +34,8 @@ from ...schemas.patient import PatientCreate
 from ...schemas.sync import SyncOp
 from ...schemas.vital import VitalCreate
 from ..case_lifecycle import TransitionRejected, apply_transition
+from ..geofence import maybe_auto_prepare
+from ..risk import evaluate_and_persist_risk
 from .hlc import HlcTimestamp, hlc_cmp
 
 _ENTITY_ORDER = {
@@ -65,6 +67,8 @@ class ApplyOutcome:
     skipped: list[dict] = field(default_factory=list)
     vitals: list[Vital] = field(default_factory=list)
     events: list[CaseEvent] = field(default_factory=list)
+    risk_events: list[CaseEvent] = field(default_factory=list)
+    prepare_events: list[CaseEvent] = field(default_factory=list)
     gps: list[GpsPoint] = field(default_factory=list)
 
 
@@ -309,25 +313,27 @@ def _apply_vital(db: Session, user, op: SyncOp) -> None:
     except ValidationError as exc:
         raise OpRejected(f"validation failed: {exc.errors()[0]['msg']}") from None
 
-    db.add(
-        Vital(
-            id=op.id,
-            case_id=case.id,
-            timestamp=data.timestamp or _utcnow(),
-            heart_rate=data.heart_rate,
-            spo2=data.spo2,
-            systolic_bp=data.systolic_bp,
-            diastolic_bp=data.diastolic_bp,
-            temperature=data.temperature,
-            respiratory_rate=data.respiratory_rate,
-            source=data.source,
-            device_id=device.id,
-            hlc=op.hlc,
-        )
+    vital = Vital(
+        id=op.id,
+        case_id=case.id,
+        timestamp=data.timestamp or _utcnow(),
+        heart_rate=data.heart_rate,
+        spo2=data.spo2,
+        systolic_bp=data.systolic_bp,
+        diastolic_bp=data.diastolic_bp,
+        temperature=data.temperature,
+        respiratory_rate=data.respiratory_rate,
+        source=data.source,
+        device_id=device.id,
+        hlc=op.hlc,
+    )
+    db.add(vital)
+    return evaluate_and_persist_risk(
+        db, case, vital, suspected_infection=data.suspected_infection
     )
 
 
-def _apply_gps(db: Session, user, op: SyncOp) -> None:
+def _apply_gps(db: Session, user, op: SyncOp) -> CaseEvent | None:
     device = _device_or_reject(db, user, op)
     _validate_hlc_device(op)
     case = _get_case(db, op.data.get("case_id"), user)
@@ -343,18 +349,20 @@ def _apply_gps(db: Session, user, op: SyncOp) -> None:
     if data.ambulance_id != case.ambulance_id:
         raise OpRejected("ambulance does not match case")
 
-    db.add(
-        GpsPoint(
-            id=op.id,
-            case_id=case.id,
-            ambulance_id=data.ambulance_id,
-            latitude=data.latitude,
-            longitude=data.longitude,
-            recorded_at=data.recorded_at or _utcnow(),
-            created_at=_utcnow(),
-            device_id=device.id,
-            hlc=op.hlc,
-        )
+    point = GpsPoint(
+        id=op.id,
+        case_id=case.id,
+        ambulance_id=data.ambulance_id,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        recorded_at=data.recorded_at or _utcnow(),
+        created_at=_utcnow(),
+        device_id=device.id,
+        hlc=op.hlc,
+    )
+    db.add(point)
+    return maybe_auto_prepare(
+        db, case, point, device_id=device.id, hlc=op.hlc
     )
 
 
@@ -549,13 +557,15 @@ def apply_batch(db: Session, user, ops: list[SyncOp]) -> ApplyOutcome:
             continue
         savepoint = db.begin_nested()
         try:
-            handler(db, user, op)
+            result = handler(db, user, op)
             savepoint.commit()
             outcome.applied.append({"id": str(op.id), "entity": op.entity})
             if op.entity == "vital":
                 vital = db.get(Vital, op.id)
                 if vital is not None:
                     outcome.vitals.append(vital)
+                if result is not None:
+                    outcome.risk_events.append(result)
             if op.entity == "transition":
                 event = db.get(CaseEvent, op.id)
                 if event is not None:
@@ -564,6 +574,8 @@ def apply_batch(db: Session, user, ops: list[SyncOp]) -> ApplyOutcome:
                 point = db.get(GpsPoint, op.id)
                 if point is not None:
                     outcome.gps.append(point)
+                if result is not None:
+                    outcome.prepare_events.append(result)
             if op.entity == "ecg":
                 tracing = db.get(EcgTracing, op.id)
                 if tracing is not None:

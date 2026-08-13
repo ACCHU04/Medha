@@ -55,6 +55,7 @@ Tag mapping · filter-then-distance ordering · no-match fallback · declined-ho
 
 - Risk: **0–4 low** · **5–6 medium** · **≥7 high**. Any single parameter = 3 forces at least medium.
 - **"NEWS2-5" deviation (documented):** O₂ administration + AVPU rows omitted until `oxygen_administered` / `consciousness` fields are added. Version tag `news2-5-v1`.
+- **Contributors rule (locked):** every non-zero component with score ≥ 2, sorted by score (desc), then canonical key order (`rr`, `spo2`, `systolic_bp`, `heart_rate`, `temperature`); each with direction ↓/↑. Example below is illustrative; the score-7 case yields `["RR ↑", "SpO₂ ↓", "Pulse ↑"]`.
 
 ### Output (shared shape)
 ```json
@@ -62,7 +63,7 @@ Tag mapping · filter-then-distance ordering · no-match fallback · declined-ho
   "score": 7,
   "risk_class": "high",
   "components": { "rr": 3, "spo2": 2, "systolic_bp": 0, "heart_rate": 2, "temperature": 0 },
-  "contributors": ["SpO₂ ↓", "RR ↑"]
+  "contributors": ["RR ↑", "SpO₂ ↓", "Pulse ↑"]
 }
 ```
 
@@ -103,7 +104,7 @@ Baseline rule: the first computed state after monitoring starts creates the init
     "news2_5": {
       "previous": { "score": 3, "risk_class": "moderate" },
       "current":  { "score": 7, "risk_class": "high" },
-      "contributors": ["SpO₂ ↓", "RR ↑"]
+      "contributors": ["RR ↑", "SpO₂ ↓", "Pulse ↑"]
     },
     "sirs": {
       "previous": { "met": false, "criteria_met": 0 },
