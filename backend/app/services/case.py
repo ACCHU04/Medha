@@ -21,7 +21,7 @@ from ..schemas.case import CaseCreate, CaseOut
 from ..schemas.hospital import HospitalOut
 from ..schemas.patient import PatientOut
 from .device import validate_owned_device
-from .eta import case_eta_minutes, eta_minutes, latest_gps, nearest_hospital
+from .eta import case_eta_minutes, case_eta_minutes_from_point, nearest_hospital
 
 _LOAD_DETAILS = (
     selectinload(EmergencyCase.patient),
@@ -143,6 +143,7 @@ def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> 
         recommended_hospital_id=case.recommended_hospital_id,
         prepared_at=case.prepared_at,
         preparation_notes=case.preparation_notes,
+        route_geojson=case.route_geojson,
         patient=PatientOut.model_validate(case.patient) if case.patient else None,
         ambulance=AmbulanceOut.model_validate(case.ambulance) if case.ambulance else None,
         destination_hospital=(
@@ -164,14 +165,8 @@ def serialize_cases(db: Session, cases: list[EmergencyCase]) -> list[CaseOut]:
     for case in cases:
         point = gps_by_case.get(case.id)
         eta = None
-        hospital = case.hospital
-        if point is not None and hospital is not None and hospital.latitude is not None:
-            eta = eta_minutes(
-                float(point.latitude),
-                float(point.longitude),
-                float(hospital.latitude),
-                float(hospital.longitude),
-            )
+        if point is not None or case.hospital is not None:
+            eta = case_eta_minutes_from_point(db, case, point)
         result.append(serialize_case(db, case, eta=eta))
     return result
 

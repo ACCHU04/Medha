@@ -23,7 +23,11 @@ Thumbs.db
 
 # Logs
 *.log
+uvicorn*.log
 
 # Test artifacts
 htmlcov/
 .coverage
+
+# Tooling
+.opencode/

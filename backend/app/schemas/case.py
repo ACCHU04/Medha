@@ -39,6 +39,7 @@ class CaseOut(BaseModel):
     recommended_hospital_id: UUID | None = None
     prepared_at: datetime | None = None
     preparation_notes: dict | None = None
+    route_geojson: dict | None = None
     patient: PatientOut | None = None
     ambulance: AmbulanceOut | None = None
     destination_hospital: HospitalOut | None = None

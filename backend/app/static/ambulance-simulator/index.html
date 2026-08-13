@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MEDHA LINK — Ambulance</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="description" content="MEDHA LINK Ambulance screen — paramedic patient management, live vitals monitoring, and emergency case dispatch.">
+  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=7">
+  <link rel="stylesheet" href="/assistant.css?v=4">
 </head>
 <body>
   <div id="banner" class="banner" hidden></div>
@@ -36,17 +39,14 @@
       </div>
     </header>
 
-    <section class="card">
-      <h2>CONNECTIVITY</h2>
-      <div class="conn-row">
-        <span id="net-badge" class="badge online">🟢 ONLINE</span>
-        <button id="offline-btn" disabled>SIMULATE OFFLINE</button>
-      </div>
-      <p class="hint" id="sync-status">Vitals queue to IndexedDB and flush via /api/v1/sync/push</p>
-    </section>
+    <!-- Live voice transcript chip (shown during recognition) -->
+    <div id="voice-transcript" class="voice-transcript" hidden></div>
 
     <section class="card">
-      <h2>PATIENT</h2>
+      <div class="card-title-row">
+        <h2>PATIENT</h2>
+        <button id="mic-patient" class="mic-btn" type="button" title="Voice fill patient details (en-IN / hi-IN)">🎙</button>
+      </div>
       <form id="patient-form" class="row-form">
         <label>Name <input id="patient-name" required></label>
         <label>Age <input id="patient-age" type="number" min="0" max="130" required></label>
@@ -62,7 +62,10 @@
     </section>
 
     <section class="card">
-      <h2>EMERGENCY CASE</h2>
+      <div class="card-title-row">
+        <h2>EMERGENCY CASE</h2>
+        <button id="mic-case" class="mic-btn" type="button" title="Voice fill case details (en-IN / hi-IN)">🎙</button>
+      </div>
       <form id="case-form" class="row-form">
         <label>Chief complaint <input id="complaint" placeholder="Chest pain" required></label>
         <label>Severity
@@ -76,6 +79,23 @@
         <button type="submit" id="create-case-btn" disabled>CREATE EMERGENCY CASE</button>
       </form>
       <p class="hint">Case id: <code id="case-id">—</code></p>
+    </section>
+
+    <section class="card">
+      <h2>LIVE VITALS</h2>
+      <div class="vitals-grid">
+        <div class="vital"><span>❤️ HR</span><strong id="v-hr">—</strong><small>BPM</small></div>
+        <div class="vital"><span>🫁 SpO₂</span><strong id="v-spo2">—</strong><small>%</small></div>
+        <div class="vital"><span>🩸 BP</span><strong id="v-bp">—</strong><small>mmHg</small></div>
+        <div class="vital"><span>🌡 Temp</span><strong id="v-temp">—</strong><small>°C</small></div>
+        <div class="vital"><span>🌬 RR</span><strong id="v-rr">—</strong><small>/min</small></div>
+      </div>
+      <div class="controls">
+        <button id="start-btn" class="primary" disabled>▶ START MONITORING</button>
+        <button id="deteriorate-btn" class="danger" disabled>🚨 SIMULATE DETERIORATION</button>
+        <button id="stop-btn" disabled>⏹ STOP</button>
+      </div>
+      <p class="hint" id="engine-state">Monitoring idle</p>
     </section>
 
     <section class="card">
@@ -94,7 +114,7 @@
         <span id="t-accept" class="badge idle">—</span>
       </div>
       <div id="t-recommend" class="hint" hidden></div>
-      <canvas id="enc-map" class="enc-map" width="360" height="150"></canvas>
+      <div id="enc-map" class="enc-map"></div>
       <div class="controls">
         <button id="btn-scene" class="primary" disabled>📍 SCENE ARRIVAL</button>
         <button id="btn-transport" class="primary" disabled>🚑 START TRANSPORT</button>
@@ -105,20 +125,12 @@
     </section>
 
     <section class="card">
-      <h2>LIVE VITALS</h2>
-      <div class="vitals-grid">
-        <div class="vital"><span>❤️ HR</span><strong id="v-hr">—</strong><small>BPM</small></div>
-        <div class="vital"><span>🫁 SpO₂</span><strong id="v-spo2">—</strong><small>%</small></div>
-        <div class="vital"><span>🩸 BP</span><strong id="v-bp">—</strong><small>mmHg</small></div>
-        <div class="vital"><span>🌡 Temp</span><strong id="v-temp">—</strong><small>°C</small></div>
-        <div class="vital"><span>🌬 RR</span><strong id="v-rr">—</strong><small>/min</small></div>
+      <h2>CONNECTIVITY</h2>
+      <div class="conn-row">
+        <span id="net-badge" class="badge online">🟢 ONLINE</span>
+        <button id="offline-btn" class="ghost" disabled>SIMULATE OFFLINE</button>
       </div>
-      <div class="controls">
-        <button id="start-btn" class="primary" disabled>▶ START MONITORING</button>
-        <button id="deteriorate-btn" class="danger" disabled>🚨 SIMULATE DETERIORATION</button>
-        <button id="stop-btn" disabled>⏹ STOP</button>
-      </div>
-      <p class="hint" id="engine-state">Monitoring idle</p>
+      <p class="hint" id="sync-status">Vitals queue to IndexedDB and flush via /api/v1/sync/push</p>
     </section>
 
     <section class="card">
@@ -140,13 +152,64 @@
       <canvas id="ecg-trace" class="ecg-trace" width="640" height="160" hidden></canvas>
       <p class="hint" id="ecg-status">Capture a paper ECG photo (JPEG/PNG) or load a sample to digitize it.</p>
       <div class="controls">
-        <button id="ecg-send-btn" class="primary" disabled>🧾 DIGITIZE & SEND</button>
+        <button id="ecg-send-btn" class="primary" disabled>🧾 DIGITIZE &amp; SEND</button>
       </div>
     </section>
-  </div>
 
-  <script src="ecg.js"></script>
-  <script src="ecg-samples.js"></script>
-  <script src="app.js"></script>
+    <!-- ============================================================
+         AI ASSISTANT PANEL  (docked right rail)
+         IDs: assistant-panel, assistant-tts-toggle, assistant-messages,
+              assistant-suggestions, assistant-input, assistant-send,
+              assistant-mic, assistant-listen-hint
+         ============================================================ -->
+    <aside id="assistant-panel" class="assistant-panel">
+      <div class="assistant-header">
+        <span class="assistant-bot-name">🤖 MEDHA AI</span>
+        <span class="assistant-dot" title="AI ready"></span>
+        <label class="tts-label" title="Read replies aloud">
+          <input type="checkbox" id="assistant-tts-toggle"> 🔊
+        </label>
+        <button id="assistant-close" class="mic-btn" type="button" style="margin-left:4px;font-size:0.7rem;padding:3px 8px!important;" title="Close panel">✕</button>
+      </div>
+
+      <div id="assistant-messages" class="assistant-messages">
+        <!-- Messages injected by voice.js -->
+      </div>
+
+      <!-- Suggested action chips (ambulance actions) -->
+      <div id="assistant-suggestions" class="assistant-suggestions">
+        <button class="chip primary" data-action="create-case" type="button">Create case</button>
+        <button class="chip" data-action="start-monitoring" type="button">Start monitoring</button>
+        <button class="chip" data-action="digitize-ecg" type="button">Digitize &amp; Send ECG</button>
+      </div>
+
+      <div class="assistant-input-row">
+        <input id="assistant-input" type="text" placeholder="Ask or type a command…" autocomplete="off">
+        <button id="assistant-mic" class="mic-icon-btn" type="button" title="Voice input (en-IN / hi-IN)">
+          🎙
+          <span id="assistant-listen-hint" class="listen-hint" hidden>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </span>
+        </button>
+        <button id="assistant-send" class="send-btn" type="button" title="Send">➤</button>
+      </div>
+    </aside>
+
+    <!-- Floating toggle (shown when panel is closed) -->
+    <button id="assistant-toggle" type="button" title="Open AI Assistant">🤖</button>
+
+  </div><!-- /#app-view -->
+
+  <script src="/vendor/medha/route.js?v=7"></script>
+  <script src="/vendor/leaflet/leaflet.js?v=7"></script>
+  <script src="ecg.js?v=7"></script>
+  <script src="ecg-samples.js?v=7"></script>
+  <script src="app.js?v=11"></script>
+  <script src="/assistant.js?v=1"></script>
+  <script src="/voice.js?v=2"></script>
 </body>
 </html>

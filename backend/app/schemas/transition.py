@@ -12,6 +12,7 @@ class TransitionCreate(BaseModel):
     severity: CaseSeverity | None = None
     note: str | None = None
     hospital_id: UUID | None = None
+    route: dict | None = None
 
 
 class TransitionOut(BaseModel):

@@ -62,6 +62,7 @@ def apply_transition(
     severity: CaseSeverity | None = None,
     note: str | None = None,
     hospital_id: UUID | None = None,
+    route: dict | None = None,
     event_id: UUID | None = None,
     device_id: UUID | None = None,
     hlc: str | None = None,
@@ -101,6 +102,8 @@ def apply_transition(
             hospital = nearest_hospital(db, case)
             if hospital is not None:
                 case.hospital_id = hospital.id
+        if route is not None:
+            case.route_geojson = route
     elif hospital_id is not None:
         raise TransitionRejected("hospital_id only allowed on transport_start")
 

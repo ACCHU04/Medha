@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -5,15 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from ..dependencies import CurrentUser, DbSession, require_role
-from ..models import CaseEvent, EmergencyCase, User
-from ..models.enums import UserRole
+from ..models import CaseEvent, EmergencyCase, GpsPoint, User
+from ..models.enums import CaseStatus, UserRole
 from ..schemas.acceptance import AcceptRequest, DeclineRequest, PrepareRequest
 from ..schemas.case import CaseCreate, CaseOut
 from ..schemas.case_event import CaseEventOut
+from ..schemas.gps import GpsCreate, GpsOut
 from ..schemas.transition import TransitionCreate, TransitionOut
 from ..services import case as case_service
 from ..services.case_lifecycle import TransitionRejected, apply_transition
-from ..services.realtime import broadcast_case_event
+from ..services.realtime import broadcast_case_event, broadcast_gps
 
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 
@@ -74,6 +76,7 @@ async def create_transition(
             severity=payload.severity,
             note=payload.note,
             hospital_id=payload.hospital_id,
+            route=payload.route,
         )
     except TransitionRejected as exc:
         raise HTTPException(
@@ -101,6 +104,61 @@ def list_case_events(
         .order_by(CaseEvent.created_at, CaseEvent.hlc)
     )
     return list(db.scalars(stmt))
+
+
+@router.get("/{case_id}/gps", response_model=list[GpsOut])
+def list_case_gps(
+    case_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> list[GpsOut]:
+    case = case_service.get_case(db, case_id)
+    _authorize_case(current_user, case)
+    stmt = (
+        select(GpsPoint)
+        .where(GpsPoint.case_id == case_id)
+        .order_by(GpsPoint.recorded_at, GpsPoint.hlc)
+    )
+    return list(db.scalars(stmt))
+
+
+@router.post("/{case_id}/gps", response_model=GpsOut, status_code=status.HTTP_201_CREATED)
+async def create_gps(
+    case_id: UUID,
+    payload: GpsCreate,
+    db: DbSession,
+    _paramedic: Paramedic,
+) -> GpsOut:
+    case = case_service.get_case(db, case_id)
+    if case.created_by_id != _paramedic.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized for this case",
+        )
+    if case.status == CaseStatus.closed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="case is closed",
+        )
+    if payload.ambulance_id != case.ambulance_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ambulance does not match case",
+        )
+    now = datetime.now(timezone.utc)
+    point = GpsPoint(
+        case_id=case.id,
+        ambulance_id=payload.ambulance_id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        recorded_at=payload.recorded_at or now,
+        created_at=now,
+    )
+    db.add(point)
+    db.commit()
+    db.refresh(point)
+    await broadcast_gps(case.id, point)
+    return point
 
 
 @router.post("/{case_id}/accept", response_model=TransitionOut)

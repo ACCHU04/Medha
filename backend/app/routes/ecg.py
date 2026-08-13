@@ -1,12 +1,21 @@
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from ..dependencies import CurrentUser, DbSession
-from ..schemas.ecg import EcgOut
+from ..dependencies import CurrentUser, DbSession, require_role
+from ..models import User
+from ..models.enums import UserRole
+from ..schemas.ecg import EcgOut, EcgSyncPayload
+from ..services import case as case_service
 from ..services import ecg as ecg_service
+from ..services.realtime import broadcast_case_event
 
 router = APIRouter(prefix="/api/v1/cases", tags=["ecg"])
+
+Paramedic = Annotated[
+    User, Depends(require_role(UserRole.paramedic))
+]
 
 
 def _out(ecg) -> EcgOut:
@@ -26,6 +35,28 @@ def _out(ecg) -> EcgOut:
         notes=ecg.notes,
         created_at=ecg.created_at,
     )
+
+
+@router.post(
+    "/{case_id}/ecg",
+    response_model=EcgOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_ecg(
+    case_id: UUID,
+    payload: EcgSyncPayload,
+    db: DbSession,
+    _paramedic: Paramedic,
+) -> EcgOut:
+    if payload.case_id != case_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="case_id mismatch"
+        )
+    record, event = ecg_service.create_ecg(db, case_id, payload, _paramedic)
+    case = case_service.get_case(db, case_id)
+    serialized = case_service.serialize_case(db, case)
+    await broadcast_case_event(case.id, event, serialized.model_dump(mode="json"))
+    return _out(record)
 
 
 @router.get("/{case_id}/ecg", response_model=list[EcgOut])

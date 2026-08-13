@@ -20,6 +20,7 @@ const state = {
   history: [],
   events: [],
   lastGps: null,
+  gpsTrack: [],
   ecgs: [],
   ws: null,
   eventsWs: null,
@@ -94,6 +95,11 @@ async function login(ev) {
     });
     state.token = data.access_token;
     state.me = await api("GET", "/api/v1/auth/me");
+    if (state.me.role !== "doctor" && state.me.role !== "hospital_admin") {
+      state.token = null;
+      showError("Hospital dashboard is for staff only — '" + state.me.username + "' is a " + state.me.role + ". Use admin1 or doctor1.");
+      return;
+    }
     $("login-view").hidden = true;
     $("app-view").hidden = false;
     $("user-name").textContent = state.me.username;
@@ -114,6 +120,8 @@ async function loadCases() {
       return rank !== 0 ? rank : new Date(b.created_at) - new Date(a.created_at);
     });
     renderQueue();
+    const selected = state.selectedId ? state.cases.find((x) => x.id === state.selectedId) : null;
+    if (selected) renderDetail(selected);
   } catch (err) {
     showError("Could not load cases: " + err.message);
   }
@@ -156,7 +164,9 @@ async function selectCase(caseId) {
   state.history = [];
   state.events = [];
   state.lastGps = null;
+  state.gpsTrack = [];
   state.ecgs = [];
+  mapFitted = false;
   stopReplay();
   state.replayIndex = null;
   renderTimeline();
@@ -176,6 +186,14 @@ async function selectCase(caseId) {
   } catch (err) {
     showError("Could not load vitals history: " + err.message);
   }
+  api("GET", `/api/v1/cases/${caseId}/gps`)
+    .then((rows) => {
+      if (caseId !== state.selectedId) return;
+      state.gpsTrack = rows || [];
+      const cur = state.cases.find((x) => x.id === caseId);
+      if (cur) drawMap(cur);
+    })
+    .catch(() => { /* live fixes will arrive over the WebSocket */ });
   loadTimeline(caseId);
   loadEcgRecords(caseId);
   connectWebSocket(caseId);
@@ -251,57 +269,87 @@ function renderTransport(c) {
 }
 
 function drawMap(c) {
-  const canvas = $("case-map");
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
+  if (!mapInstance) initMap();
+  if (!mapInstance) return;
+  if (!mapLayerGroup) mapLayerGroup = L.layerGroup().addTo(mapInstance);
+  mapLayerGroup.clearLayers();
 
   const dest = c && c.destination_hospital;
-  if (!dest || dest.latitude == null || dest.longitude == null) {
-    ctx.fillStyle = "#64748b";
-    ctx.font = "11px system-ui";
-    ctx.fillText("No destination set yet", 16, H / 2 + 4);
-    return;
-  }
-  const pos = state.lastGps;
-  const points = [{ lat: dest.latitude, lng: dest.longitude }];
-  if (pos) points.push({ lat: pos.latitude, lng: pos.longitude });
-  let minLat = Math.min(...points.map((p) => p.lat));
-  let maxLat = Math.max(...points.map((p) => p.lat));
-  let minLng = Math.min(...points.map((p) => p.lng));
-  let maxLng = Math.max(...points.map((p) => p.lng));
-  if (maxLat - minLat < 0.004) { minLat -= 0.002; maxLat += 0.002; }
-  if (maxLng - minLng < 0.004) { minLng -= 0.002; maxLng += 0.002; }
-  const pad = 24;
-  const sx = (lng) => pad + ((lng - minLng) / (maxLng - minLng)) * (W - pad * 2);
-  const sy = (lat) => H - pad - ((lat - minLat) / (maxLat - minLat)) * (H - pad * 2);
+  const destPos =
+    dest && dest.latitude != null
+      ? [Number(dest.latitude), Number(dest.longitude)]
+      : null;
+  const destValid = destPos && isFinite(destPos[0]) && isFinite(destPos[1]);
 
-  if (pos) {
-    const a = { x: sx(pos.longitude), y: sy(pos.latitude) };
-    const b = { x: sx(dest.longitude), y: sy(dest.latitude) };
-    ctx.strokeStyle = "#9aa7b8";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = "#3b82f6";
-    ctx.beginPath();
-    ctx.arc(a.x, a.y, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
+  const routeGeo = c && c.route_geojson;
+  const planned =
+    routeGeo && Array.isArray(routeGeo.coordinates) && routeGeo.coordinates.length >= 2
+      ? routeGeo.coordinates
+          .map((p) => [Number(p[0]), Number(p[1])])
+          .filter((p) => isFinite(p[0]) && isFinite(p[1]))
+      : null;
+
+  const track = state.gpsTrack || [];
+  const trackPos = track
+    .map((g) => [Number(g.latitude), Number(g.longitude)])
+    .filter((p) => isFinite(p[0]) && isFinite(p[1]));
+  const livePos = trackPos.length ? trackPos[trackPos.length - 1] : null;
+  const startPos = trackPos.length ? trackPos[0] : planned ? planned[0] : null;
+
+  const plannedStyle = { color: "#475569", weight: 4, dashArray: "8 8", opacity: 0.9 };
+  if (planned) {
+    L.polyline(planned, plannedStyle).addTo(mapLayerGroup);
+  } else if (livePos && destValid) {
+    L.polyline([livePos, destPos], plannedStyle).addTo(mapLayerGroup);
   }
-  ctx.fillStyle = "#7c3aed";
-  ctx.beginPath();
-  ctx.arc(sx(dest.longitude), sy(dest.latitude), 7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.stroke();
+  if (trackPos.length >= 2) {
+    L.polyline(trackPos, { color: "#0e7490", weight: 5, opacity: 1 }).addTo(mapLayerGroup);
+  }
+  if (startPos) {
+    L.marker(startPos, { title: "Scene" }).addTo(mapLayerGroup).bindTooltip("Scene / pickup");
+  }
+  if (destValid) {
+    L.marker(destPos, { title: "Hospital" })
+      .addTo(mapLayerGroup)
+      .bindTooltip(dest ? dest.name : "Hospital");
+  }
+  if (livePos) {
+    L.circleMarker(livePos, {
+      radius: 8,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#0e7490",
+      fillOpacity: 1,
+    }).addTo(mapLayerGroup);
+  }
+
+  const boundsPts = planned ? planned.slice() : trackPos.slice();
+  if (destValid) boundsPts.push(destPos);
+  if (!mapFitted && boundsPts.length) {
+    mapInstance.fitBounds(L.latLngBounds(boundsPts), { padding: [30, 30], maxZoom: 16 });
+    mapFitted = true;
+  } else if (!mapFitted) {
+    mapInstance.setView([18.52, 73.85], 12);
+    mapFitted = true;
+  }
+}
+
+// ---- Leaflet live map (Feature 3) ----
+
+let mapInstance = null;
+let mapLayerGroup = null;
+let mapFitted = false;
+
+function initMap() {
+  const el = $("case-map");
+  if (!el || typeof L === "undefined" || mapInstance) return;
+  mapInstance = L.map(el, { zoomControl: true, attributionControl: true });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(mapInstance);
+  setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(); }, 0);
 }
 
 async function hospitalAction(action) {
@@ -406,7 +454,7 @@ function drawChart(canvasId, series) {
   lo -= range * 0.1;
   hi += range * 0.1;
 
-  ctx.strokeStyle = "#334155";
+  ctx.strokeStyle = "#e2e8f0";
   ctx.lineWidth = 1;
   ctx.font = "9px system-ui";
   ctx.fillStyle = "#64748b";
@@ -456,7 +504,7 @@ function drawChart(canvasId, series) {
   if (state.replayIndex != null && state.history.length > 0) {
     const idx = Math.max(0, Math.min(state.history.length - 1, state.replayIndex));
     const x = n <= 1 ? padX + plotW / 2 : padX + (idx / (n - 1)) * plotW;
-    ctx.strokeStyle = "#f59e0b";
+    ctx.strokeStyle = "#d97706";
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -477,13 +525,13 @@ function values(key) {
 }
 
 function drawCharts() {
-  drawChart("chart-hr", [{ color: "#4ade80", values: values("heart_rate") }]);
-  drawChart("chart-spo2", [{ color: "#60a5fa", values: values("spo2") }]);
+  drawChart("chart-hr", [{ color: "#16a34a", values: values("heart_rate") }]);
+  drawChart("chart-spo2", [{ color: "#2563eb", values: values("spo2") }]);
   drawChart("chart-bp", [
-    { color: "#f87171", values: values("systolic_bp") },
-    { color: "#fb923c", values: values("diastolic_bp") },
+    { color: "#dc2626", values: values("systolic_bp") },
+    { color: "#ea580c", values: values("diastolic_bp") },
   ]);
-  drawChart("chart-rr", [{ color: "#c084fc", values: values("respiratory_rate") }]);
+  drawChart("chart-rr", [{ color: "#7c3aed", values: values("respiratory_rate") }]);
 }
 
 window.addEventListener("resize", () => { if (state.selectedId) drawCharts(); });
@@ -706,6 +754,7 @@ function connectEventsWebSocket(caseId) {
     if (!msg) return;
     if (msg.type === "gps") {
       state.lastGps = msg.gps;
+      state.gpsTrack.push(msg.gps);
       const c = state.cases.find((x) => x.id === caseId);
       if (c) drawMap(c);
       return;

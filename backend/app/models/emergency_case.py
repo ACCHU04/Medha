@@ -41,6 +41,7 @@ class EmergencyCase(Base):
         DateTime(timezone=True), nullable=True
     )
     preparation_notes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    route_geojson: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     severity: Mapped[CaseSeverity | None] = mapped_column(
         Enum(CaseSeverity, name="case_severity", native_enum=True), nullable=True
     )

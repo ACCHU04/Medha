@@ -463,6 +463,15 @@ function scheduleRetry() {
   });
 }
 
+async function recoverOnline() {
+  if (state.simOffline) return;
+  if (state.network !== "online") {
+    state.network = "online";
+    await updateOfflineUI();
+  }
+  await runFlush();
+}
+
 function setOffline(on) {
   state.simOffline = on;
   if (on) {
@@ -589,17 +598,28 @@ async function tick() {
   if (!state.running) return;
   state.current = nextVitals();
   renderVitals(state.current);
+  if (!state.simOffline) {
+    try {
+      await api("POST", `/api/v1/cases/${state.case.id}/vitals`, toPayload(state.current));
+      await recoverOnline();
+      return;
+    } catch (err) {
+      if (err instanceof TypeError) {
+        await enqueueVital(state.current);
+        await updateOfflineUI();
+        return;
+      }
+      showError("Vital upload failed: " + err.message);
+      return;
+    }
+  }
   try {
     await enqueueVital(state.current);
   } catch (err) {
     showError("Local queue write failed: " + err.message);
     return;
   }
-  if (state.network === "online") {
-    await runFlush();
-  } else {
-    await updateOfflineUI();
-  }
+  await updateOfflineUI();
 }
 
 function startMonitoring() {
@@ -648,10 +668,10 @@ async function simulateDeterioration() {
   renderVitals(state.current);
   setEngineState("CRITICAL — posting immediate critical reading");
   try {
-    await enqueueVital(state.current);
     if (state.network === "online") {
-      await runFlush();
+      await api("POST", `/api/v1/cases/${state.case.id}/vitals`, toPayload(state.current));
     } else {
+      await enqueueVital(state.current);
       await updateOfflineUI();
     }
     if (state.mode === "critical") {
@@ -811,65 +831,99 @@ function renderTransportInfo() {
   drawMap();
 }
 
-// ---- GPS engine (Feature 3) ----
+// ---- GPS engine + live map (Feature 3) ----
 
-function offsetFrom(center, bearing, km) {
-  const R = 6371;
-  const latRad = (center.latitude * Math.PI) / 180;
-  const dLat = (km / R) * Math.cos(bearing);
-  const dLng = ((km / R) * Math.sin(bearing)) / Math.cos(latRad);
+const SCENE_OFFSET_KM = { min: 3, max: 6 };
+
+function resolveDestination(hospitalId) {
+  if (hospitalId) return state.hospitals.find((h) => h.id === hospitalId) || null;
+  const baseId = state.ambulance && state.ambulance.hospital_id;
+  return (
+    state.hospitals.find((h) => h.id === baseId) ||
+    state.hospitals[0] ||
+    null
+  );
+}
+
+function routePayload(r) {
   return {
-    lat: center.latitude + dLat * (180 / Math.PI),
-    lng: center.longitude + dLng * (180 / Math.PI),
+    coordinates: r.coords,
+    distance_m: r.distanceM,
+    duration_s: r.durationS,
+    source: r.source,
   };
 }
 
-function buildRoute(dest) {
-  const bearing = Math.random() * 2 * Math.PI;
-  const km = 3 + Math.random() * 3;
-  const start = offsetFrom(dest, bearing, km);
+function applyRoute(payload) {
+  const coords = (payload && payload.coordinates || []).map((c) => [
+    Number(c[0]),
+    Number(c[1]),
+  ]);
+  if (coords.length < 2) return null;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
   state.route = {
-    start,
-    dest: { lat: dest.latitude, lng: dest.longitude },
+    start: { lat: first[0], lng: first[1] },
+    dest: { lat: last[0], lng: last[1] },
+    coords,
+    distanceM: payload.distance_m || 0,
+    durationS: payload.duration_s || 60,
+    durationMs: (payload.duration_s || 60) * 1000,
+    source: payload.source || "osrm",
     t: 0,
-    durationMs: (km / AVG_SPEED_KMH) * 3600 * 1000,
     lastTick: null,
   };
+  mapFitted = false;
+  return state.route;
+}
+
+async function buildRoute(dest) {
+  const rt = await MedhaRoute.buildRoute(dest, SCENE_OFFSET_KM);
+  state.route = {
+    start: rt.origin,
+    dest: rt.destination,
+    coords: rt.coordinates,
+    distanceM: rt.distance_m,
+    durationS: rt.duration_s,
+    durationMs: rt.duration_s * 1000,
+    source: rt.source,
+    t: 0,
+    lastTick: null,
+  };
+  mapFitted = false;
+  return state.route;
 }
 
 function ensureRoute() {
   if (state.route) return true;
   const dest = state.case && state.case.destination_hospital;
-  if (dest && dest.latitude != null && dest.longitude != null) {
-    buildRoute(dest);
-    drawMap();
-    return true;
+  if (!dest || dest.latitude == null || dest.longitude == null) return false;
+  const persisted = state.case.route_geojson;
+  if (persisted && Array.isArray(persisted.coordinates) && persisted.coordinates.length >= 2) {
+    if (applyRoute(persisted)) {
+      drawMap();
+      return true;
+    }
   }
-  return false;
+  const start = MedhaRoute.randomScenePoint(
+    { latitude: dest.latitude, longitude: dest.longitude },
+    SCENE_OFFSET_KM.min,
+    SCENE_OFFSET_KM.max
+  );
+  applyRoute(
+    MedhaRoute.straightRoute(start, { lat: dest.latitude, lng: dest.longitude })
+  );
+  drawMap();
+  return true;
 }
 
 function routePosition() {
   const r = state.route;
   if (!r) return null;
-  const t = Math.min(1, Math.max(0, r.t));
-  return {
-    lat: r.start.lat + (r.dest.lat - r.start.lat) * t,
-    lng: r.start.lng + (r.dest.lng - r.start.lng) * t,
-  };
+  return MedhaRoute.interpolateAlong(r.coords, Math.min(1, Math.max(0, r.t)));
 }
 
-async function gpsTick() {
-  if (!state.case || state.case.status !== "transporting") {
-    stopGps();
-    return;
-  }
-  if (!ensureRoute()) return;
-  const now = Date.now();
-  if (state.route.lastTick !== null) {
-    state.route.t += (now - state.route.lastTick) / state.route.durationMs;
-  }
-  state.route.lastTick = now;
-  const pos = routePosition();
+function enqueueGps(pos) {
   const op = {
     id: newUuid(),
     op: "upsert",
@@ -885,19 +939,49 @@ async function gpsTick() {
       recorded_at: new Date().toISOString(),
     },
   };
+  return enqueueOp(op);
+}
+
+async function gpsTick() {
+  if (!state.case || state.case.status !== "transporting") {
+    stopGps();
+    return;
+  }
+  if (!ensureRoute()) return;
+  const now = Date.now();
+  if (state.route.lastTick !== null) {
+    state.route.t += (now - state.route.lastTick) / state.route.durationMs;
+  }
+  state.route.lastTick = now;
+  const pos = routePosition();
+  drawMap();
+  if (!state.simOffline) {
+    try {
+      await api("POST", `/api/v1/cases/${state.case.id}/gps`, {
+        case_id: state.case.id,
+        ambulance_id: state.ambulance.id,
+        latitude: pos.lat,
+        longitude: pos.lng,
+        recorded_at: new Date().toISOString(),
+      });
+      await recoverOnline();
+      return;
+    } catch (err) {
+      if (err instanceof TypeError) {
+        await enqueueGps(pos);
+        await updateOfflineUI();
+        return;
+      }
+      return;
+    }
+  }
   try {
-    await enqueueOp(op);
+    await enqueueGps(pos);
   } catch (err) {
     showError("GPS queue write failed: " + err.message);
     return;
   }
-  drawMap();
-  if (state.network === "online") {
-    const result = await runFlush();
-    if (result.gps) await refreshEncounter();
-  } else {
-    await updateOfflineUI();
-  }
+  await updateOfflineUI();
 }
 
 function syncGpsEngine() {
@@ -917,66 +1001,101 @@ function stopGps() {
   }
 }
 
+// ---- Leaflet live map ----
+
+let mapInstance = null;
+let mapRouteLayer = null;
+let mapStartMarker = null;
+let mapDestMarker = null;
+let mapLiveMarker = null;
+let mapFitted = false;
+
+function initMap() {
+  const el = $("enc-map");
+  if (!el || typeof L === "undefined" || mapInstance) return;
+  mapInstance = L.map(el, { zoomControl: true, attributionControl: true });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(mapInstance);
+  setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(); }, 0);
+}
+
 function drawMap() {
-  const canvas = $("enc-map");
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
+  if (!mapInstance) initMap();
+  if (!mapInstance) return;
+  const r = state.route;
+  const dest = state.case && state.case.destination_hospital;
+  const destPos = r ? r.dest : dest ? { lat: Number(dest.latitude), lng: Number(dest.longitude) } : null;
+  const destValid = destPos && isFinite(destPos.lat) && isFinite(destPos.lng);
+  const startPos = r && r.start ? r.start : null;
+  const startValid = startPos && isFinite(startPos.lat) && isFinite(startPos.lng);
+  const livePos = r ? routePosition() : null;
+  const routeCoords = r
+    ? r.coords.map((c) => [c[0], c[1]]).filter((c) => isFinite(c[0]) && isFinite(c[1]))
+    : [];
 
-  const pts = [];
-  if (state.route) {
-    pts.push(state.route.start, state.route.dest);
-  } else if (state.case && state.case.destination_hospital) {
-    pts.push({ lat: state.case.destination_hospital.latitude, lng: state.case.destination_hospital.longitude });
+  if (!mapRouteLayer) {
+    mapRouteLayer = L.polyline([], {
+      color: "#475569",
+      weight: 4,
+      dashArray: "8 8",
+      opacity: 0.9,
+    }).addTo(mapInstance);
   }
-  if (pts.length === 0) return;
+  mapRouteLayer.setLatLngs(routeCoords);
 
-  let minLat = Math.min(...pts.map((p) => p.lat));
-  let maxLat = Math.max(...pts.map((p) => p.lat));
-  let minLng = Math.min(...pts.map((p) => p.lng));
-  let maxLng = Math.max(...pts.map((p) => p.lng));
-  if (maxLat - minLat < 0.001) { minLat -= 0.0005; maxLat += 0.0005; }
-  if (maxLng - minLng < 0.001) { minLng -= 0.0005; maxLng += 0.0005; }
-  const pad = 24;
-  const sx = (lng) => pad + ((lng - minLng) / (maxLng - minLng)) * (W - pad * 2);
-  const sy = (lat) => H - pad - ((lat - minLat) / (maxLat - minLat)) * (H - pad * 2);
-
-  if (state.route) {
-    const a = { x: sx(state.route.start.lng), y: sy(state.route.start.lat) };
-    const b = { x: sx(state.route.dest.lng), y: sy(state.route.dest.lat) };
-    ctx.strokeStyle = "#9aa7b8";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    const pos = routePosition();
-    const c = { x: sx(pos.lng), y: sy(pos.lat) };
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(c.x, c.y);
-    ctx.strokeStyle = "#3b82f6";
-    ctx.stroke();
-
-    ctx.fillStyle = "#3b82f6";
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
+  if (!mapStartMarker && startValid) {
+    mapStartMarker = L.marker([startPos.lat, startPos.lng], { title: "Scene" })
+      .addTo(mapInstance)
+      .bindTooltip("Scene / pickup");
+  } else if (mapStartMarker && !startValid) {
+    mapInstance.removeLayer(mapStartMarker);
+    mapStartMarker = null;
+  }
+  if (mapStartMarker && startValid) {
+    mapStartMarker.setLatLng([startPos.lat, startPos.lng]);
   }
 
-  ctx.fillStyle = "#7c3aed";
-  ctx.beginPath();
-  ctx.arc(sx(state.route ? state.route.dest.lng : pts[0].lng), sy(state.route ? state.route.dest.lat : pts[0].lat), 7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.stroke();
+  if (!mapDestMarker && destValid) {
+    mapDestMarker = L.marker([destPos.lat, destPos.lng], { title: "Hospital" })
+      .addTo(mapInstance)
+      .bindTooltip(dest && dest.name ? dest.name : "Hospital");
+  } else if (mapDestMarker && !destValid) {
+    mapInstance.removeLayer(mapDestMarker);
+    mapDestMarker = null;
+  }
+  if (mapDestMarker && destValid) {
+    mapDestMarker.setLatLng([destPos.lat, destPos.lng]);
+  }
+
+  if (!mapLiveMarker) {
+    mapLiveMarker = L.circleMarker([0, 0], {
+      radius: 8,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#0e7490",
+      fillOpacity: 1,
+    }).addTo(mapInstance);
+  }
+  if (livePos) {
+    mapLiveMarker.setLatLng([livePos.lat, livePos.lng]);
+    mapLiveMarker.setStyle({ fillColor: state.route.source === "straight_line" ? "#b45309" : "#0e7490" });
+  }
+
+  if (!mapFitted && startValid && destValid) {
+    mapInstance.fitBounds(
+      L.latLngBounds(
+        [[startPos.lat, startPos.lng], [destPos.lat, destPos.lng]]
+      ),
+      { padding: [36, 36] }
+    );
+    mapFitted = true;
+  } else if (!mapFitted && livePos) {
+    mapInstance.setView([livePos.lat, livePos.lng], 13);
+    mapFitted = true;
+  }
 }
 
 // ---- Paper ECG digitization (Feature 4) ----
@@ -1089,12 +1208,19 @@ function renderEcgStatus() {
   }
   const ch = w.channels[0];
   const grid = w.grid || {};
+  if (!state.ecg.gridBox) {
+    el.textContent = "No grid detected — best-effort trace, " + ch.points.length + " samples · " + qLabel;
+    el.className = "hint warn";
+    return;
+  }
   el.textContent = "Grid " + grid.mm_per_px_x + " px/mm · " + ch.points.length + " samples · " + qLabel;
   el.className = "hint sync-ok";
 }
 
 function updateEcgSend() {
-  const ok = state.case && state.ecg && state.ecg.waveform && state.ecg.quality && state.ecg.quality.checks_passed;
+  const w = state.ecg && state.ecg.waveform;
+  const pts = w && w.channels && w.channels[0] && w.channels[0].points;
+  const ok = state.case && state.ecg && state.ecg.quality && pts && pts.length >= 2;
   $("ecg-send-btn").disabled = !ok;
 }
 
@@ -1109,6 +1235,12 @@ function processEcgImage(image) {
     const waveform = window.EcgDigitize.extractTrace(cropped, { mm_per_px: mmpx, sample_mm: 2, name: "I" });
     state.ecg.normalized = normCanvasFromData(cropped);
     state.ecg.waveform = waveform;
+  } else {
+    const waveform = window.EcgDigitize.extractTrace(image, { mm_per_px: 1, sample_mm: 2, name: "I" });
+    if (waveform.channels[0].points.length >= 2) {
+      state.ecg.waveform = waveform;
+      state.ecg.normalized = normCanvasFromData(image);
+    }
   }
   drawTracePreview(state.ecg.waveform);
   renderEcgStatus();
@@ -1154,6 +1286,34 @@ async function sendEcg() {
   const ecg = state.ecg || {};
   if (!ecg.waveform || !ecg.quality) { showError("Capture and digitize an ECG first"); return; }
   clearError();
+  const payload = {
+    case_id: state.case.id,
+    captured_at: new Date().toISOString(),
+    source: "paper_photo",
+    lead_count: ecg.waveform.channels.length,
+    paper_speed: "25",
+    image_original: ecgCanvasToB64(ecg.original),
+    image_normalized: ecg.normalized ? ecgCanvasToB64(ecg.normalized) : null,
+    waveform: ecg.waveform,
+    quality: ecg.quality,
+    notes: null,
+  };
+  const status = $("ecg-status");
+  if (!state.simOffline) {
+    try {
+      await api("POST", `/api/v1/cases/${state.case.id}/ecg`, payload);
+      status.className = "hint sync-ok";
+      status.textContent = "Digitized ECG sent to hospital.";
+      await recoverOnline();
+      return;
+    } catch (err) {
+      if (!(err instanceof TypeError)) {
+        status.className = "hint warn";
+        status.textContent = "Digitized ECG rejected by server: " + err.message;
+        return;
+      }
+    }
+  }
   const op = {
     id: newUuid(),
     op: "upsert",
@@ -1161,18 +1321,7 @@ async function sendEcg() {
     ref_id: state.case.id,
     device_id: state.device.id,
     hlc: state.clock.now(),
-    data: {
-      case_id: state.case.id,
-      captured_at: new Date().toISOString(),
-      source: "paper_photo",
-      lead_count: ecg.waveform.channels.length,
-      paper_speed: "25",
-      image_original: ecgCanvasToB64(ecg.original),
-      image_normalized: ecg.normalized ? ecgCanvasToB64(ecg.normalized) : null,
-      waveform: ecg.waveform,
-      quality: ecg.quality,
-      notes: null,
-    },
+    data: payload,
   };
   try {
     await enqueueOp(op);
@@ -1180,25 +1329,9 @@ async function sendEcg() {
     showError("ECG queue write failed: " + err.message);
     return;
   }
-  const status = $("ecg-status");
   status.className = "hint sync-ok";
   status.textContent = "Digitized ECG queued for sync.";
-  if (state.network === "online") {
-    const result = await runFlush();
-    if (result) {
-      const pending = await countPending();
-      if (result.skipped > 0) {
-        status.textContent = "Digitized ECG rejected by server.";
-        status.className = "hint warn";
-      } else if (pending === 0) {
-        status.textContent = "Digitized ECG synced to hospital.";
-      } else {
-        status.textContent = "ECG synced — " + pending + " op(s) still pending.";
-      }
-    }
-  } else {
-    await updateOfflineUI();
-  }
+  await updateOfflineUI();
 }
 
 // ---- Live events websocket (Feature 3) ----
@@ -1225,6 +1358,13 @@ function disconnectEventsWs() {
   }
 }
 
+async function refreshAmbulance() {
+  try {
+    state.ambulance = await api("GET", "/api/v1/ambulances/mine");
+    setBadge(state.ambulance.status.toUpperCase());
+  } catch (_) { /* keep last known status */ }
+}
+
 async function refreshEncounter() {
   if (!state.case) return;
   try {
@@ -1234,7 +1374,6 @@ async function refreshEncounter() {
     ]);
     state.case = c;
     state.events = events || [];
-    state.case.status = phaseFromEvents(state.events);
     renderEncounterTimeline();
     updateEncounterUI();
     renderTransportInfo();
@@ -1242,6 +1381,7 @@ async function refreshEncounter() {
   } catch (err) {
     showError("Could not refresh encounter: " + err.message);
   }
+  refreshAmbulance();
 }
 
 async function doTransition(eventType) {
@@ -1249,7 +1389,50 @@ async function doTransition(eventType) {
   if (eventType === "transport_start") {
     const chosen = $("dest-select").value;
     if (chosen && chosen !== "__auto__") extra = { hospital_id: chosen };
+    const dest = resolveDestination(chosen && chosen !== "__auto__" ? chosen : null);
+    if (dest) {
+      try {
+        const r = await buildRoute(dest);
+        if (r && isFinite(r.distanceM)) {
+          extra.route = routePayload(r);
+          if (state.case) state.case.route_geojson = extra.route;
+        }
+      } catch (err) {
+        showError("Route unavailable — transport continues without a map: " + err.message);
+      }
+    }
   }
+
+  // Online: send the transition straight to the server so the hospital sees
+  // the new state immediately and the UI can never diverge from reality.
+  if (!state.simOffline) {
+    try {
+      const result = await api("POST", `/api/v1/cases/${state.case.id}/transitions`, {
+        event_type: eventType,
+        ...(extra.hospital_id ? { hospital_id: extra.hospital_id } : {}),
+        ...(extra.route ? { route: extra.route } : {}),
+      });
+      if (result && result.case) state.case = result.case;
+      await recoverOnline();
+    } catch (err) {
+      if (err instanceof TypeError) {
+        await enqueueTransition(eventType, extra);
+        applyLocalTransition(eventType);
+        drawMap();
+        await updateOfflineUI();
+        syncGpsEngine();
+        return;
+      }
+      showError("Transition rejected by server: " + err.message);
+      return;
+    }
+    await refreshEncounter();
+    if (eventType === "case_closed" && state.running) stopMonitoring();
+    if (eventType === "case_closed") disconnectEventsWs();
+    return;
+  }
+
+  // Offline: queue locally as before.
   try {
     await enqueueTransition(eventType, extra);
   } catch (err) {
@@ -1257,11 +1440,8 @@ async function doTransition(eventType) {
     return;
   }
   applyLocalTransition(eventType);
-  if (state.network === "online") {
-    await runFlush();
-  } else {
-    await updateOfflineUI();
-  }
+  drawMap();
+  await updateOfflineUI();
   syncGpsEngine();
   if (eventType === "case_closed" && state.running) stopMonitoring();
   if (eventType === "case_closed") disconnectEventsWs();

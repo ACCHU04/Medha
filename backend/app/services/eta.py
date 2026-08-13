@@ -1,8 +1,11 @@
 """Prototype ETA + nearest-hospital helpers (Feature 3).
 
-The ETA is a straight-line haversine distance at a constant average speed.
-It is explicitly a prototype calculation — production would use a real
-routing/navigation provider.
+The ETA prefers the OSRM road route captured at ``transport_start`` (stored in
+``EmergencyCase.route_geojson``): the remaining journey is the route's total
+``duration_s`` scaled by how far along the polyline the latest GPS fix has
+traveled. When no routed route is available it falls back to a straight-line
+haversine distance at a constant average speed. Both are explicitly prototype
+calculations — production would use a validated emergency-routing provider.
 """
 
 import math
@@ -63,17 +66,85 @@ def latest_position(db: Session, case: EmergencyCase) -> tuple[float, float] | N
     return None
 
 
-def case_eta_minutes(db: Session, case: EmergencyCase) -> int | None:
-    """Prototype ETA (minutes) from the latest fix to the destination hospital."""
+def route_eta_minutes_from_point(
+    case: EmergencyCase,
+    point: GpsPoint | None,
+) -> int | None:
+    """Remaining minutes along the routed polyline (``route_geojson``).
+
+    The simulator generates fixes *on* the stored polyline, so the nearest-vertex
+    cumulative length is an exact traveled fraction; for other data sources it is
+    still a reasonable prototype approximation. Returns ``None`` when the case has
+    no routed route.
+    """
+    route = case.route_geojson
+    if not isinstance(route, dict):
+        return None
+    duration_s = route.get("duration_s")
+    coords = route.get("coordinates")
+    if (
+        not isinstance(duration_s, (int, float))
+        or not isinstance(coords, list)
+        or len(coords) < 2
+    ):
+        return None
+
+    total = 0.0
+    seg_lens: list[float] = []
+    for a, b in zip(coords, coords[1:]):
+        d = haversine_km(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
+        seg_lens.append(d)
+        total += d
+
+    if point is None or point.latitude is None or point.longitude is None:
+        return max(0, math.ceil(float(duration_s) / 60.0))
+    if total <= 0:
+        return max(0, math.ceil(float(duration_s) / 60.0))
+
+    lat, lng = float(point.latitude), float(point.longitude)
+    best_i = 0
+    best_d = float("inf")
+    for i, (la, lo) in enumerate(coords):
+        d = haversine_km(lat, lng, float(la), float(lo))
+        if d < best_d:
+            best_i, best_d = i, d
+
+    traveled = sum(seg_lens[:best_i])
+    frac = min(1.0, traveled / total)
+    remaining_s = float(duration_s) * (1.0 - frac)
+    return max(0, math.ceil(remaining_s / 60.0))
+
+
+def case_eta_minutes_from_point(
+    db: Session,
+    case: EmergencyCase,
+    point: GpsPoint | None,
+) -> int | None:
+    """Prototype ETA: OSRM routed route when available, else straight-line."""
+    routed = route_eta_minutes_from_point(case, point)
+    if routed is not None:
+        return routed
+
     hospital = case.hospital
     if hospital is None or hospital.latitude is None or hospital.longitude is None:
         return None
-    origin = latest_position(db, case)
+    origin: tuple[float, float] | None = None
+    if point is not None:
+        origin = (float(point.latitude), float(point.longitude))
+    elif case.ambulance is not None and case.ambulance.hospital is not None:
+        base = case.ambulance.hospital
+        if base.latitude is not None and base.longitude is not None:
+            origin = (float(base.latitude), float(base.longitude))
     if origin is None:
         return None
     return eta_minutes(
         origin[0], origin[1], float(hospital.latitude), float(hospital.longitude)
     )
+
+
+def case_eta_minutes(db: Session, case: EmergencyCase) -> int | None:
+    """Prototype ETA (minutes) from the latest fix to the destination hospital."""
+    return case_eta_minutes_from_point(db, case, latest_gps(db, case.id))
 
 
 def _gps_origin_or_base(db: Session, case: EmergencyCase, base: Hospital | None) -> tuple[float, float] | None:

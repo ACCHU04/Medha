@@ -506,6 +506,7 @@ def _apply_transition(db: Session, user, op: SyncOp) -> None:
             severity=severity,
             note=op.data.get("note"),
             hospital_id=hospital_id,
+            route=op.data.get("route"),
             event_id=op.id,
             device_id=device.id,
             hlc=op.hlc,

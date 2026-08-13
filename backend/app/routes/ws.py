@@ -79,6 +79,7 @@ async def vitals_stream(
     db: Session = Depends(get_db),
 ) -> None:
     result = _authorize(websocket, db)
+    db.rollback()
     if isinstance(result, int):
         await websocket.close(code=result)
         return
@@ -101,6 +102,7 @@ async def events_stream(
     db: Session = Depends(get_db),
 ) -> None:
     result = _authorize(websocket, db)
+    db.rollback()
     if isinstance(result, int):
         await websocket.close(code=result)
         return

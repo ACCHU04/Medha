@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MEDHA LINK V1 — Pi 5-based prototype edge gateway for prehospital data acquisition and coordination</title>
+<style>
+  :root {
+    --navy: #0f2a43;
+    --teal: #0e7c86;
+    --hard: #35507a;
+    --edge: #0e7c86;
+    --srv: #0f2a43;
+    --valid: #1a7f4e;
+    --hw-dep: #b7791f;
+    --proposed: #6b7280;
+    --ink: #1c2430;
+    --mut: #5b6675;
+    --line: #d7dde6;
+    --bg: #ffffff;
+    --bg-soft: #f2f5f9;
+    --bg-tint: #eaf2f3;
+  }
+  * { box-sizing: border-box; }
+  @page {
+    size: A4;
+    margin: 16mm 13mm 18mm 13mm;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: var(--ink);
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 4px;
+  }
+  /* ---- cover ---- */
+  .cover { page-break-after: always; }
+  .cover-band {
+    background: linear-gradient(135deg, var(--navy), #174a75);
+    color: #fff;
+    padding: 34px 36px 26px;
+    border-radius: 4px;
+  }
+  .cover-band .kicker {
+    font-size: 9pt;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #9fd3d8;
+    margin: 0 0 18px;
+  }
+  .cover-band h1 {
+    margin: 0 0 10px;
+    font-size: 24pt;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+  .cover-band .sub {
+    font-size: 12pt;
+    color: #cfe7ea;
+    margin: 0;
+  }
+  .cover-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 22px 0 18px;
+  }
+  .meta-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px 14px;
+  }
+  .meta-card .lbl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; color: var(--mut); margin-bottom: 2px; }
+  .meta-card .val { font-size: 10pt; font-weight: 600; }
+  .safeguard {
+    border: 1.5px solid #a94438;
+    background: #fdf3f1;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 8px 0 16px;
+  }
+  .safeguard .tag { font-size: 8pt; font-weight: 700; letter-spacing: 1px; color: #a94438; text-transform: uppercase; margin-bottom: 4px; }
+  .safeguard p { margin: 0; font-size: 10.5pt; font-weight: 600; color: #7c2d24; }
+  /* ---- typography ---- */
+  h2 {
+    font-size: 16pt;
+    color: var(--navy);
+    border-bottom: 2px solid var(--teal);
+    padding-bottom: 4px;
+    margin: 26px 0 10px;
+    page-break-after: avoid;
+  }
+  h2 .num { color: var(--teal); }
+  h3 { font-size: 12pt; color: var(--navy); margin: 16px 0 6px; page-break-after: avoid; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 20px; padding: 0; }
+  li { margin: 3px 0; }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.8pt;
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0 4px;
+    color: #123;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 9pt;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--navy); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  /* ---- status badges ---- */
+  .badge {
+    display: inline-block;
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #fff;
+    border-radius: 3px;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+  .b-valid { background: var(--valid); }
+  .b-hwdep { background: var(--hw-dep); }
+  .b-proposed { background: var(--proposed); }
+  /* ---- figures ---- */
+  .figure {
+    margin: 14px 0;
+    page-break-inside: avoid;
+  }
+  .figure svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #fff;
+  }
+  .figcaption {
+    font-size: 8.3pt;
+    color: var(--mut);
+    margin-top: 4px;
+    text-align: center;
+  }
+  .figcaption b { color: var(--navy); }
+  /* ---- callouts ---- */
+  .callout {
+    border-left: 4px solid var(--teal);
+    background: var(--bg-tint);
+    padding: 8px 12px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .callout .ct { font-weight: 700; color: var(--navy); }
+  .warn { border-left-color: #a94438; background: #fdf3f1; }
+  .warn .ct { color: #7c2d24; }
+  .evidence {
+    border: 1px solid #cfe3d4;
+    background: #f0f8f2;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 9pt;
+  }
+  .evidence b { color: var(--valid); }
+  .note { font-size: 8.8pt; color: var(--mut); font-style: italic; }
+  .termbox {
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin: 10px 0;
+  }
+  .termbox .t { font-weight: 700; color: var(--navy); }
+  .toc { margin: 10px 0 20px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc li {
+    padding: 5px 0;
+    border-bottom: 1px dotted var(--line);
+    font-size: 10pt;
+  }
+  .toc li .no { display: inline-block; width: 24px; color: var(--teal); font-weight: 700; }
+  .toc .appendix { color: var(--mut); }
+  .pagebreak { page-break-before: always; }
+  .safeguard-inline {
+    border: 1px dashed #a94438;
+    background: #fdf3f1;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-weight: 600;
+    color: #7c2d24;
+  }
+  .diag-symbols { color: var(--mut); font-size: 8.5pt; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <div class="cover-band">
+    <p class="kicker">MEDHA LINK · Engineering Prototype Reference · Phase 2 Hardware Track</p>
+    <h1>Pi 5-based prototype edge gateway for prehospital data acquisition and coordination</h1>
+    <p class="sub">Hardware architecture, offline-first sync, and software implementation map for the MEDHA LINK V1 demonstrator</p>
+  </div>
+
+  <div class="cover-meta">
+    <div class="meta-card"><div class="lbl">Document</div><div class="val">MEDHA LINK Hardware V1</div></div>
+    <div class="meta-card"><div class="lbl">Version</div><div class="val">v1.0</div></div>
+    <div class="meta-card"><div class="lbl">Date</div><div class="val">2026-08-12</div></div>
+    <div class="meta-card"><div class="lbl">Status</div><div class="val">Engineering prototype (not regulatory)</div></div>
+    <div class="meta-card"><div class="lbl">Classification</div><div class="val">Internal</div></div>
+    <div class="meta-card"><div class="lbl">Software baseline</div><div class="val">MEDHA LINK v0.6.0-feature6 (FastAPI + PostgreSQL)</div></div>
+  </div>
+
+  <div class="safeguard">
+    <div class="tag">Safety / prototype disclaimer</div>
+    <p>MEDHA LINK Hardware V1 is a research/prototype architecture and is not a clinically certified patient monitor.</p>
+  </div>
+
+  <div class="termbox">
+    <div class="t">Terminology used throughout</div>
+    <p style="margin-top:4px;"><b>Edge gateway</b> — the in-ambulance computer (Raspberry Pi 5) that acquires, validates, buffers, and synchronizes prehospital data.
+    This document intentionally describes a <b>prototype edge gateway for prehospital data acquisition and coordination</b> and never a "medical monitoring device".</p>
+    <p class="note">No part of this document implies CE / FDA / CDSCO certification, accuracy for treatment decisions, or fitness for clinical monitoring.</p>
+  </div>
+
+  <h2>Contents</h2>
+  <div class="toc">
+    <ol>
+      <li><span class="no">1</span>Safety &amp; prototype disclaimer</li>
+      <li><span class="no">2</span>System overview architecture</li>
+      <li><span class="no">3</span>Implemented vs Validated vs Proposed matrix</li>
+      <li><span class="no">4</span>Hardware architecture — Raspberry Pi 5 gateway</li>
+      <li><span class="no">5</span>Sensor / acquisition chain</li>
+      <li><span class="no">6</span>Offline-first architecture</li>
+      <li><span class="no">7</span>Sync / HLC implementation</li>
+      <li><span class="no">8</span>ECG + paper-ECG digitization pipeline</li>
+      <li><span class="no">9</span>Encounter / GPS / ETA</li>
+      <li><span class="no">10</span>Hospital coordination</li>
+      <li><span class="no">11</span>Handover / FHIR / CDA</li>
+      <li><span class="no">12</span>AI / ECG boundary</li>
+      <li><span class="no">13</span>Software module mapping</li>
+      <li><span class="no">14</span>Current limitations + next hardware-validation steps</li>
+      <li class="appendix"><span class="no">A</span>Appendix — this document as the 3D-video technical foundation</li>
+    </ol>
+  </div>
+  <p class="note">Rendered from <code>docs/medha-link-hardware-v1.html</code>; regenerate the PDF from the HTML source to keep in sync with code changes.</p>
+</div>
+
+<!-- ================= 1. DISCLAIMER ================= -->
+<h2><span class="num">1.</span> Safety &amp; prototype disclaimer</h2>
+<p>MEDHA LINK is being developed as a research/prototype platform, not as a certified medical device. Every claim in this document is scoped to a demonstrator that proves the core idea:</p>
+<div class="callout">
+  <span class="ct">Core demonstrator:</span>
+  <span>real sensor → MEDHA edge device → local processing → offline storage → reconnect → synchronization → hospital dashboard → structured handover.</span>
+</div>
+<ul>
+  <li><b>Hardware captures and digitizes signals.</b> Software cleans, validates, stores, synchronizes, visualizes, and performs only clearly bounded prototype analysis.</li>
+  <li><b>Not for clinical use.</b> No measurement shown is claimed to be clinically valid, and no software output is intended for treatment decisions without qualified human review.</li>
+  <li><b>Status is explicit.</b> Section 3 separates implemented-and-validated software, implemented-but-hardware-dependent software, and proposed hardware so nothing in this document overstates readiness.</li>
+</ul>
+<div class="safeguard">
+  <div class="tag">Safety / prototype disclaimer</div>
+  <p>MEDHA LINK Hardware V1 is a research/prototype architecture and is not a clinically certified patient monitor.</p>
+</div>
+
+<!-- ================= 2. SYSTEM OVERVIEW ================= -->
+<h2><span class="num">2.</span> System overview architecture</h2>
+<p>The system is a single end-to-end pipeline: the patient is the source of signal; the edge gateway is the owner of acquisition and offline resilience; the server is the owner of validation, persistence, and coordination; the hospital dashboard is the point of human decision.</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 500" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="13">
+    <defs>
+      <marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+    <rect x="300" y="10" width="160" height="34" rx="6" fill="#0f2a43"/>
+    <text x="380" y="31" fill="#fff" text-anchor="middle" font-size="13" font-weight="700">PATIENT</text>
+
+    <rect x="20" y="80" width="150" height="34" rx="6" fill="#35507a"/>
+    <text x="95" y="101" fill="#fff" text-anchor="middle">ECG leads</text>
+    <rect x="205" y="80" width="170" height="34" rx="6" fill="#35507a"/>
+    <text x="290" y="101" fill="#fff" text-anchor="middle">SpO₂ · BP · Temperature</text>
+    <rect x="410" y="80" width="140" height="34" rx="6" fill="#35507a"/>
+    <text x="480" y="101" fill="#fff" text-anchor="middle">GNSS position</text>
+    <rect x="585" y="80" width="150" height="34" rx="6" fill="#35507a"/>
+    <text x="660" y="101" fill="#fff" text-anchor="middle">Paper ECG (camera)</text>
+    <line x1="380" y1="44" x2="290" y2="80" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+    <line x1="380" y1="44" x2="480" y2="80" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+    <line x1="380" y1="44" x2="660" y2="80" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+
+    <rect x="60" y="150" width="640" height="120" rx="8" fill="#0e7c86"/>
+    <text x="380" y="174" fill="#fff" text-anchor="middle" font-weight="700" font-size="14">RASPBERRY PI 5 EDGE GATEWAY</text>
+    <line x1="150" y1="182" x2="610" y2="182" stroke="#9fd3d8" stroke-width="1"/>
+    <text x="150" y="202" fill="#fff" text-anchor="middle" font-size="12">Acquisition services</text>
+    <text x="280" y="202" fill="#fff" text-anchor="middle" font-size="12">Validation</text>
+    <text x="380" y="202" fill="#fff" text-anchor="middle" font-size="12">SQLite outbox</text>
+    <text x="490" y="202" fill="#fff" text-anchor="middle" font-size="12">HLC clock</text>
+    <text x="590" y="202" fill="#fff" text-anchor="middle" font-size="12">Sync engine</text>
+    <text x="380" y="226" fill="#d5ebee" text-anchor="middle" font-size="11">Local device app · touchscreen UI · camera capture · GPS service · 4G/Wi-Fi manager</text>
+    <text x="380" y="244" fill="#d5ebee" text-anchor="middle" font-size="11">Bounded prototype analysis: signal quality, waveform visualization, ETA estimate</text>
+    <line x1="290" y1="114" x2="250" y2="150" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+    <line x1="480" y1="114" x2="480" y2="150" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+
+    <rect x="180" y="310" width="400" height="34" rx="6" fill="#5b6675"/>
+    <text x="380" y="331" fill="#fff" text-anchor="middle" font-size="12">TRANSPORT — Wi-Fi / 4G LTE (online) · SQLite outbox (offline)</text>
+    <line x1="380" y1="270" x2="380" y2="310" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+
+    <rect x="180" y="384" width="400" height="34" rx="6" fill="#0f2a43"/>
+    <text x="380" y="405" fill="#fff" text-anchor="middle" font-weight="700">MEDHA SERVER — FastAPI + PostgreSQL</text>
+    <text x="380" y="376" fill="#5b6675" text-anchor="middle" font-size="11">HLC ordering · validation · dedupe · LWW · persistence</text>
+    <line x1="380" y1="344" x2="380" y2="384" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+
+    <rect x="100" y="452" width="220" height="34" rx="6" fill="#0e7c86"/>
+    <text x="210" y="473" fill="#fff" text-anchor="middle">Ambulance UI</text>
+    <rect x="440" y="452" width="240" height="34" rx="6" fill="#0e7c86"/>
+    <text x="560" y="473" fill="#fff" text-anchor="middle">Hospital dashboard → FHIR/CDA</text>
+    <line x1="280" y1="418" x2="210" y2="452" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+    <line x1="480" y1="418" x2="560" y2="452" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar1)"/>
+  </svg>
+  <div class="figcaption"><b>Figure 1 —</b> System overview: patient → sensors → Pi 5 edge gateway → offline-first sync → MEDHA server → hospital coordination.</div>
+</div>
+
+<p><b>Where each layer works:</b></p>
+<table>
+  <tr><th>Layer</th><th>Owns</th><th>Does not own</th></tr>
+  <tr><td><b>Hardware</b> (Pi 5 + sensor boards)</td><td>Signal capture and digitization</td><td>Diagnosis, clinical validation</td></tr>
+  <tr><td><b>Edge software</b> (device app)</td><td>Acquisition services, validation, offline outbox, HLC, bounded analysis, UI</td><td>Authoritative storage, cross-unit coordination</td></tr>
+  <tr><td><b>Server</b> (FastAPI + PostgreSQL)</td><td>Validation, dedupe/LWW, persistence, realtime broadcast, handover assembly</td><td>Autonomous clinical interpretation</td></tr>
+  <tr><td><b>Hospital dashboard</b></td><td>Human review, accept/prepare decisions, handover consumption</td><td>—</td></tr>
+</table>
+
+<!-- ================= 3. STATUS MATRIX ================= -->
+<h2><span class="num">3.</span> Implemented vs Validated vs Proposed matrix</h2>
+<p>This matrix is the single most important integrity control in the document. It separates what already exists in the codebase, what is proven to work, and what is only proposed hardware. Nothing below is a planned target; every row is a current, measured state.</p>
+
+<table>
+  <tr><th style="width:32%">Capability</th><th style="width:16%">Status</th><th>Evidence / notes</th></tr>
+  <tr>
+    <td>Offline-first device client — SQLite outbox, HLC clock, flush loop, backoff, dead-letter queue (<code>services/sync/device.py</code>, <code>hlc.py</code>)</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>Full test suite passing; offline→reconnect→flush proven in automated full-journey test.</td>
+  </tr>
+  <tr>
+    <td>Server sync apply — device ownership, per-entity appliers, HLC dedupe, LWW (<code>services/sync/apply.py</code>)</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>Dedupe (replayed op skipped as "duplicate") asserted in tests.</td>
+  </tr>
+  <tr>
+    <td>Case lifecycle + auto hospital assignment + ETA (<code>case_lifecycle.py</code>, <code>eta.py</code>)</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>transport_start auto-assigns nearest hospital; ETA in queue. Verified live.</td>
+  </tr>
+  <tr>
+    <td>Realtime streams — vitals &amp; events WebSockets, broadcast (<code>routes/ws.py</code>, <code>services/realtime.py</code>)</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>Streaming exercised; WS session transaction handling hardened.</td>
+  </tr>
+  <tr>
+    <td>Hospital dashboard — live queue, canvas ECG, accept/prepare, vitals trends</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>API-backed flows verified; canvas rendering + print layout are manual acceptance items.</td>
+  </tr>
+  <tr>
+    <td>Paper-ECG digitization (camera → waveform JSON) + FHIR/CDA handover</td>
+    <td><span class="badge b-valid">Implemented + validated</span></td>
+    <td>Bundle structure, section counts, CDA well-formedness, and boundary text asserted in tests.</td>
+  </tr>
+  <tr>
+    <td>Acquisition service layer (reads real ADS1292R / SpO₂ / BP / GPS hardware)</td>
+    <td><span class="badge b-hwdep">Implemented (hardware-dependent)</span></td>
+    <td>Protocol-level interfaces exist for GPS/ECG sync ops; physical sensor drivers not yet exercised.</td>
+  </tr>
+  <tr>
+    <td>Raspberry Pi 5 edge assembly, sensor boards, 4G modem, touchscreen, enclosure</td>
+    <td><span class="badge b-proposed">Proposed</span></td>
+    <td>Architecture defined in sections 4–5; no hardware purchased or built yet.</td>
+  </tr>
+</table>
+
+<div class="evidence">
+  <b>Verified evidence baseline (measured 2026-08-12):</b> automated test suite <b>188 / 188 passing</b>, plus a live full-journey API run against the running server + PostgreSQL: <b>26 / 26 checks passed</b> (device → patient → case → scene arrival → transport (auto hospital) → accept/prepare → GPS/ETA → online + critical vitals → offline buffering of 5 → reconnect flush → dedupe → ECG → FHIR + CDA → arrival → close → ambulance freed). Browser-only rendering remains a manual acceptance item.
+</div>
+
+<!-- ================= 4. HARDWARE ARCHITECTURE ================= -->
+<h2><span class="num">4.</span> Hardware architecture — Raspberry Pi 5 gateway</h2>
+<p>Raspberry Pi 5 (8&nbsp;GB recommended) is the edge gateway. It is the single computer that runs the device application, the local SQLite database, the offline outbox, the HLC clock, sensor acquisition services, ECG processing, camera capture, the touchscreen UI, the synchronization client, the GPS service, and the Wi-Fi/4G connection manager.</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+
+    <rect x="60" y="150" width="200" height="60" rx="7" fill="#35507a"/>
+    <text x="160" y="176" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">ECG AFE</text>
+    <text x="160" y="194" fill="#d9e2f0" text-anchor="middle" font-size="10">ADS1292R · SPI</text>
+    <text x="160" y="131" fill="#35507a" text-anchor="middle" font-size="10">ECG pads → protection/isolation</text>
+    <line x1="160" y1="142" x2="160" y2="150" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+    <rect x="60" y="240" width="200" height="60" rx="7" fill="#35507a"/>
+    <text x="160" y="266" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">Sensor hub (MCU/USB)</text>
+    <text x="160" y="284" fill="#d9e2f0" text-anchor="middle" font-size="10">SpO₂ · BP · temperature</text>
+
+    <rect x="500" y="150" width="200" height="60" rx="7" fill="#35507a"/>
+    <text x="600" y="176" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">GNSS receiver</text>
+    <text x="600" y="194" fill="#d9e2f0" text-anchor="middle" font-size="10">u-blox NEO-M9N · UART</text>
+
+    <rect x="500" y="240" width="200" height="60" rx="7" fill="#35507a"/>
+    <text x="600" y="266" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">4G LTE modem</text>
+    <text x="600" y="284" fill="#d9e2f0" text-anchor="middle" font-size="10">Quectel EC25 · USB · SIM</text>
+
+    <rect x="270" y="150" width="220" height="150" rx="9" fill="#0e7c86"/>
+    <text x="380" y="180" fill="#fff" text-anchor="middle" font-size="14" font-weight="700">RASPBERRY PI 5</text>
+    <line x1="300" y1="192" x2="460" y2="192" stroke="#9fd3d8" stroke-width="1"/>
+    <text x="380" y="212" fill="#fff" text-anchor="middle" font-size="11">Linux · device app · SQLite</text>
+    <text x="380" y="228" fill="#fff" text-anchor="middle" font-size="11">outbox · HLC · sync client</text>
+    <text x="380" y="244" fill="#fff" text-anchor="middle" font-size="11">sensor services · ECG</text>
+    <text x="380" y="260" fill="#fff" text-anchor="middle" font-size="11">camera · touchscreen UI</text>
+    <text x="380" y="278" fill="#d5ebee" text-anchor="middle" font-size="10">USB · GPIO/SPI · UART · CSI · DSI</text>
+    <line x1="260" y1="180" x2="270" y2="180" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+    <line x1="260" y1="270" x2="270" y2="270" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+    <line x1="490" y1="180" x2="500" y2="180" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+    <line x1="490" y1="270" x2="500" y2="270" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+    <rect x="270" y="40" width="220" height="40" rx="7" fill="#0f2a43"/>
+    <text x="380" y="64" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">7–10″ TOUCHSCREEN</text>
+    <text x="380" y="80" fill="#cfe0ee" text-anchor="middle" font-size="9">HDMI/DSI · vitals + lifecycle UI</text>
+    <line x1="380" y1="80" x2="380" y2="150" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+    <rect x="270" y="330" width="220" height="40" rx="7" fill="#0f2a43"/>
+    <text x="380" y="354" fill="#fff" text-anchor="middle" font-size="12" font-weight="700">CAMERA + POWER/UPS</text>
+    <text x="380" y="370" fill="#cfe0ee" text-anchor="middle" font-size="9">CSI · battery/UPS + enclosure</text>
+    <line x1="380" y1="300" x2="380" y2="330" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar2)"/>
+  </svg>
+  <div class="figcaption"><b>Figure 2 —</b> Hardware block diagram: Pi 5 gateway with ECG AFE, sensor hub, GNSS, 4G, camera, touchscreen, power.</div>
+</div>
+
+<h3>4.1 Why Raspberry Pi 5</h3>
+<ul>
+  <li><b>Compute:</b> quad-core 64-bit CPU with enough margin for acquisition, ECG filtering, camera processing, and the touchscreen UI simultaneously.</li>
+  <li><b>Interfaces:</b> USB 3, GPIO (SPI/I²C/UART), Wi-Fi + Bluetooth/BLE, CSI camera, DSI display, and PCIe — one board covers every sensor link in this design.</li>
+  <li><b>Software fit:</b> the existing Python device client (<code>services/sync/device.py</code>) and server stack already target Python 3.x + Linux-style packaging; the Pi 5 runs the same code path used by the browser simulator.</li>
+</ul>
+<div class="callout"><span class="ct">Principle:</span> keep the architecture identical to the proven software path — only the signal source changes (browser simulator → real sensor). The offline outbox, HLC, and sync protocol are reused unchanged.</div>
+
+<!-- ================= 5. SENSOR CHAIN ================= -->
+<h2><span class="num">5.</span> Sensor / acquisition chain</h2>
+<div class="safeguard-inline">Prototype sensing interfaces shown here are engineering-development components and are not claimed to provide clinically validated measurements.</div>
+
+<h3>5.1 ECG — ADS1292R analog front end</h3>
+<p>Electrodes are <b>not</b> connected directly to Pi GPIO. A dedicated analog front end (TI ADS1292R — 2-channel, 24-bit, SPI) digitizes the differential ECG signal:</p>
+<div class="figure">
+  <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+    <rect x="20" y="40" width="120" height="46" rx="6" fill="#35507a"/>
+    <text x="80" y="60" fill="#fff" text-anchor="middle" font-weight="700">ECG electrodes</text>
+    <text x="80" y="75" fill="#d9e2f0" text-anchor="middle" font-size="10">differential mV</text>
+    <line x1="140" y1="63" x2="175" y2="63" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar3)"/>
+
+    <rect x="175" y="40" width="120" height="46" rx="6" fill="#35507a"/>
+    <text x="235" y="60" fill="#fff" text-anchor="middle" font-weight="700">Protection /</text>
+    <text x="235" y="75" fill="#d9e2f0" text-anchor="middle" font-size="10">isolation</text>
+    <line x1="295" y1="63" x2="330" y2="63" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar3)"/>
+
+    <rect x="330" y="40" width="130" height="46" rx="6" fill="#35507a"/>
+    <text x="395" y="60" fill="#fff" text-anchor="middle" font-weight="700">AFE + ADS1292R</text>
+    <text x="395" y="75" fill="#d9e2f0" text-anchor="middle" font-size="10">2ch · 24-bit · SPI</text>
+    <line x1="460" y1="63" x2="495" y2="63" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar3)"/>
+
+    <rect x="495" y="40" width="120" height="46" rx="6" fill="#0e7c86"/>
+    <text x="555" y="60" fill="#fff" text-anchor="middle" font-weight="700">Pi 5 (SPI driver)</text>
+    <text x="555" y="75" fill="#d5ebee" text-anchor="middle" font-size="10">sample stream</text>
+    <line x1="615" y1="63" x2="650" y2="63" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar3)"/>
+
+    <rect x="650" y="40" width="90" height="46" rx="6" fill="#0f2a43"/>
+    <text x="695" y="60" fill="#fff" text-anchor="middle" font-weight="700">Samples</text>
+    <text x="695" y="75" fill="#cfe0ee" text-anchor="middle" font-size="10">(t, mV)</text>
+
+    <rect x="20" y="130" width="720" height="108" rx="8" fill="#f2f5f9" stroke="#d7dde6"/>
+    <text x="40" y="152" fill="#0e7c86" font-weight="700" font-size="11">SOFTWARE PROCESSING (prototype scope — quality + visualization only)</text>
+    <rect x="40" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="87" y="185" fill="#fff" text-anchor="middle" font-size="10">lead quality</text>
+    <rect x="145" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="192" y="185" fill="#fff" text-anchor="middle" font-size="10">baseline</text>
+    <rect x="250" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="297" y="185" fill="#fff" text-anchor="middle" font-size="10">50/60 Hz</text>
+    <rect x="355" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="402" y="185" fill="#fff" text-anchor="middle" font-size="10">band-pass</text>
+    <rect x="460" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="507" y="185" fill="#fff" text-anchor="middle" font-size="10">artifacts</text>
+    <rect x="565" y="164" width="95" height="34" rx="5" fill="#0e7c86"/><text x="612" y="185" fill="#fff" text-anchor="middle" font-size="10">waveform</text>
+    <rect x="670" y="164" width="58" height="34" rx="5" fill="#0f2a43"/><text x="699" y="185" fill="#fff" text-anchor="middle" font-size="9">JSON</text>
+    <line x1="135" y1="181" x2="145" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="240" y1="181" x2="250" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="345" y1="181" x2="355" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="450" y1="181" x2="460" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="555" y1="181" x2="565" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="660" y1="181" x2="670" y2="181" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar3)"/>
+    <line x1="695" y1="86" x2="695" y2="164" stroke="#5b6675" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar3)"/>
+  </svg>
+  <div class="figcaption"><b>Figure 3 —</b> ECG signal chain. The prototype stops at signal acquisition + quality + waveform visualization; it does not claim diagnosis.</div>
+</div>
+
+<h3>5.2 SpO₂ · BP · temperature</h3>
+<table>
+  <tr><th>Signal</th><th>Prototype approach</th><th>Note</th></tr>
+  <tr><td>SpO₂ / pulse</td><td>MAX3010x-class optical sensor via sensor-hub MCU/USB</td><td>Proof-of-concept only; not a clinically validated oximetry system.</td></tr>
+  <tr><td>Blood pressure</td><td>Commercial digital BP module/device with documented interface, or simulated values for the first demo</td><td>Not built from scratch — cuff electronics are out of scope for V1.</td></tr>
+  <tr><td>Temperature</td><td>MCU/USB/I²C temperature sensor</td><td>Straightforward for demonstration; clinical use requires a validated chain.</td></tr>
+</table>
+<p>Each measurement is validated on-device, then emitted as the same <code>vital</code> SyncOp the existing pipeline already consumes — the server, dashboard, and handover code need no changes.</p>
+
+<h3>5.3 GPS and 4G</h3>
+<ul>
+  <li><b>GPS:</b> u-blox NEO-M9N (GPS/GLONASS/Galileo/BeiDou) over UART → <code>gps</code> SyncOp → server → ETA + dashboard position.</li>
+  <li><b>4G:</b> Quectel EC25-class LTE Cat-4 modem over USB with a SIM. For the first prototype, an evaluation board is used instead of designing RF hardware.</li>
+</ul>
+
+<!-- ================= 6. OFFLINE-FIRST ================= -->
+<h2><span class="num">6.</span> Offline-first architecture</h2>
+<p>This is the core engineering bet of MEDHA LINK and the part of the architecture that is already implemented and validated in software. The physical device mirrors the proven pattern 1:1.</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+
+    <text x="20" y="24" fill="#0f2a43" font-weight="700" font-size="12">DEVICE (Pi 5)</text>
+    <rect x="20" y="36" width="200" height="52" rx="6" fill="#0e7c86"/>
+    <text x="120" y="58" fill="#fff" text-anchor="middle" font-weight="700">SENSORS / CAMERA</text>
+    <text x="120" y="74" fill="#d5ebee" text-anchor="middle" font-size="10">vitals · ECG · GPS · events</text>
+    <line x1="220" y1="62" x2="300" y2="62" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+
+    <rect x="300" y="36" width="220" height="52" rx="6" fill="#0f2a43"/>
+    <text x="410" y="58" fill="#fff" text-anchor="middle" font-weight="700">SQLITE OUTBOX</text>
+    <text x="410" y="74" fill="#cfe0ee" text-anchor="middle" font-size="10">pending → synced · HLC-ordered</text>
+    <line x1="520" y1="62" x2="560" y2="62" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+
+    <polygon points="560,40 610,62 560,84" fill="#5b6675"/>
+    <text x="600" y="66" fill="#fff" text-anchor="middle" font-size="9" font-weight="700">FLUSH</text>
+
+    <line x1="610" y1="62" x2="655" y2="62" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+    <rect x="655" y="36" width="85" height="52" rx="6" fill="#0e7c86"/>
+    <text x="697" y="58" fill="#fff" text-anchor="middle" font-weight="700">SERVER</text>
+    <text x="697" y="74" fill="#d5ebee" text-anchor="middle" font-size="10">/sync/push</text>
+
+    <line x1="410" y1="88" x2="410" y2="120" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+    <text x="432" y="112" fill="#5b6675" font-size="10">no network?</text>
+
+    <rect x="300" y="120" width="220" height="60" rx="8" fill="#fdf3f1" stroke="#a94438" stroke-width="1.2"/>
+    <text x="410" y="144" fill="#7c2d24" text-anchor="middle" font-weight="700">DEAD ZONE — nothing is lost</text>
+    <text x="410" y="162" fill="#7c2d24" text-anchor="middle" font-size="10">vitals · ECG · GPS · events → SQLite</text>
+    <line x1="410" y1="180" x2="410" y2="214" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+
+    <rect x="300" y="214" width="220" height="60" rx="8" fill="#f0f8f2" stroke="#cfe3d4"/>
+    <text x="410" y="238" fill="#1a7f4e" text-anchor="middle" font-weight="700">RECONNECT → FLUSH ALL</text>
+    <text x="410" y="256" fill="#1a7f4e" text-anchor="middle" font-size="10">HLC ordering · server dedupe · LWW</text>
+    <line x1="410" y1="274" x2="410" y2="300" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar4)"/>
+    <rect x="330" y="300" width="160" height="24" rx="5" fill="#0f2a43"/>
+    <text x="410" y="316" fill="#fff" text-anchor="middle" font-size="10">PostgreSQL (source of truth)</text>
+  </svg>
+  <div class="figcaption"><b>Figure 4 —</b> Offline-first flow: every captured op lands in the SQLite outbox; loss of network only delays delivery, never drops data.</div>
+</div>
+
+<div class="callout"><span class="ct">Dead-zone behavior:</span> when the ambulance enters a coverage gap, vitals, GPS, ECG, and events keep writing to the SQLite outbox. On reconnect, the flush loop pushes everything in HLC order; the server validates, dedupes replays, resolves conflicts by LWW, and broadcasts to the hospital via WebSocket.</div>
+
+<!-- ================= 7. SYNC / HLC ================= -->
+<h2><span class="num">7.</span> Sync / HLC implementation</h2>
+<p>Every offline op is one SyncOp. The protocol is deliberately small and is already implemented, tested, and proven in the live journey.</p>
+
+<h3>7.1 The SyncOp and the push protocol</h3>
+<pre style="background:#f2f5f9;border:1px solid #d7dde6;border-radius:4px;padding:10px;font-family:Consolas,monospace;font-size:8.6pt;overflow:auto;margin:8px 0;">{
+  "batch": [{
+    "op": "upsert", "entity": "vital",
+    "id": "&lt;uuid&gt;", "device_id": "&lt;uuid&gt;",
+    "hlc": "2026-08-12T10:01:01Z:0001:&lt;device-uuid&gt;",
+    "data": { "case_id": "...", "heart_rate": 82, "spo2": 97, ... }
+  }]
+}
+POST /api/v1/sync/push  →  { "applied": [{"id","entity"}], "skipped": [{"id","entity","reason"}] }</pre>
+<ul>
+  <li><b>HLC (hybrid logical clock)</b> — <code>services/sync/hlc.py</code>: combines wall-clock with a monotonic counter and device suffix, giving total ordering even across offline devices. Server-side dedupe uses it to detect replays (<code>reason: "duplicate"</code>).</li>
+  <li><b>Device client</b> — <code>services/sync/device.py</code>: <code>SQLiteLocalStore</code> (durable outbox), <code>AmbulanceDevice.record()/flush()</code>, transient failures bump attempts with exponential backoff; permanent rejections move to a dead-letter queue.</li>
+  <li><b>Server apply</b> — <code>services/sync/apply.py</code>: ownership check (<code>_device_or_reject</code>), per-entity appliers (vital / gps / ecg / transition), dedupe + last-writer-wins, single commit, then WebSocket broadcast.</li>
+</ul>
+
+<div class="figure">
+  <svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+    <rect x="20" y="30" width="170" height="44" rx="6" fill="#0e7c86"/>
+    <text x="105" y="50" fill="#fff" text-anchor="middle" font-weight="700">Device sends batch</text>
+    <text x="105" y="65" fill="#d5ebee" text-anchor="middle" font-size="10">POST /api/v1/sync/push</text>
+    <line x1="190" y1="52" x2="225" y2="52" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <rect x="225" y="30" width="150" height="44" rx="6" fill="#0f2a43"/>
+    <text x="300" y="50" fill="#fff" text-anchor="middle" font-weight="700">Authenticate</text>
+    <text x="300" y="65" fill="#cfe0ee" text-anchor="middle" font-size="10">bearer · paramedic</text>
+    <line x1="375" y1="52" x2="410" y2="52" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <rect x="410" y="30" width="170" height="44" rx="6" fill="#0f2a43"/>
+    <text x="495" y="50" fill="#fff" text-anchor="middle" font-weight="700">Device ownership</text>
+    <text x="495" y="65" fill="#cfe0ee" text-anchor="middle" font-size="10">_device_or_reject</text>
+    <line x1="580" y1="52" x2="615" y2="52" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <rect x="600" y="30" width="140" height="44" rx="6" fill="#0e7c86"/>
+    <text x="670" y="50" fill="#fff" text-anchor="middle" font-weight="700">Per-entity apply</text>
+    <text x="670" y="65" fill="#d5ebee" text-anchor="middle" font-size="10">vital · gps · ecg · trans</text>
+
+    <line x1="670" y1="74" x2="670" y2="115" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <rect x="560" y="115" width="190" height="44" rx="6" fill="#35507a"/>
+    <text x="655" y="135" fill="#fff" text-anchor="middle" font-weight="700">Dedupe (HLC) · LWW upsert</text>
+    <text x="655" y="150" fill="#d9e2f0" text-anchor="middle" font-size="10">replay → skipped "duplicate"</text>
+    <line x1="655" y1="159" x2="655" y2="195" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <rect x="560" y="195" width="190" height="44" rx="6" fill="#0f2a43"/>
+    <text x="655" y="215" fill="#fff" text-anchor="middle" font-weight="700">Commit → PostgreSQL</text>
+    <text x="655" y="230" fill="#cfe0ee" text-anchor="middle" font-size="10">single transaction</text>
+
+    <line x1="560" y1="217" x2="400" y2="217" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <rect x="230" y="195" width="170" height="44" rx="6" fill="#0e7c86"/>
+    <text x="315" y="215" fill="#fff" text-anchor="middle" font-weight="700">WS broadcast</text>
+    <text x="315" y="230" fill="#d5ebee" text-anchor="middle" font-size="10">vitals · events · GPS</text>
+    <line x1="230" y1="217" x2="100" y2="217" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <rect x="20" y="195" width="80" height="44" rx="6" fill="#35507a"/>
+    <text x="60" y="210" fill="#fff" text-anchor="middle" font-size="10">Hospital</text>
+    <text x="60" y="225" fill="#fff" text-anchor="middle" font-size="10">dashboard</text>
+
+    <line x1="100" y1="239" x2="100" y2="275" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <rect x="20" y="275" width="160" height="34" rx="6" fill="#0f2a43"/>
+    <text x="100" y="296" fill="#fff" text-anchor="middle" font-size="11">response {applied[], skipped[]}</text>
+  </svg>
+  <div class="figcaption"><b>Figure 5 —</b> Server-side sync/push processing: authenticate → ownership → per-entity apply → dedupe/LWW → commit → broadcast.</div>
+</div>
+
+<!-- ================= 8. ECG PIPELINE ================= -->
+<h2><span class="num">8.</span> ECG + paper-ECG digitization pipeline</h2>
+<p>Two ECG paths converge on the same waveform JSON. Live capture comes from the ADS1292R chain (section 5.1); legacy paper ECGs are digitized by camera.</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="11.5">
+    <defs>
+      <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+    <rect x="20" y="20" width="95" height="40" rx="6" fill="#35507a"/>
+    <text x="67" y="38" fill="#fff" text-anchor="middle" font-weight="700">Camera</text>
+    <text x="67" y="52" fill="#d9e2f0" text-anchor="middle" font-size="9">paper ECG</text>
+    <line x1="115" y1="40" x2="145" y2="40" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+    <rect x="145" y="20" width="95" height="40" rx="6" fill="#0e7c86"/>
+    <text x="192" y="38" fill="#fff" text-anchor="middle" font-weight="700">Downscale</text>
+    <text x="192" y="52" fill="#d5ebee" text-anchor="middle" font-size="9">+ quality check</text>
+    <line x1="240" y1="40" x2="270" y2="40" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+    <rect x="270" y="20" width="95" height="40" rx="6" fill="#0e7c86"/>
+    <text x="317" y="38" fill="#fff" text-anchor="middle" font-weight="700">Grid detection</text>
+    <text x="317" y="52" fill="#d5ebee" text-anchor="middle" font-size="9">perspective norm</text>
+    <line x1="365" y1="40" x2="395" y2="40" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+    <rect x="395" y="20" width="105" height="40" rx="6" fill="#0e7c86"/>
+    <text x="447" y="38" fill="#fff" text-anchor="middle" font-weight="700">Trace extraction</text>
+    <text x="447" y="52" fill="#d5ebee" text-anchor="middle" font-size="9">dark waveform segment</text>
+    <line x1="500" y1="40" x2="530" y2="40" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+    <rect x="530" y="20" width="105" height="40" rx="6" fill="#0e7c86"/>
+    <text x="582" y="38" fill="#fff" text-anchor="middle" font-weight="700">Downsample</text>
+    <text x="582" y="52" fill="#d5ebee" text-anchor="middle" font-size="9">waveform JSON</text>
+    <line x1="635" y1="40" x2="665" y2="40" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar6)"/>
+
+    <rect x="665" y="20" width="75" height="40" rx="6" fill="#0f2a43"/>
+    <text x="702" y="38" fill="#fff" text-anchor="middle" font-weight="700">Sync to</text>
+    <text x="702" y="52" fill="#cfe0ee" text-anchor="middle" font-size="9">hospital</text>
+
+    <rect x="20" y="100" width="720" height="118" rx="8" fill="#f2f5f9" stroke="#d7dde6"/>
+    <text x="40" y="122" fill="#0e7c86" font-weight="700" font-size="11">SHARED PIPELINE (also used for live ADS1292R captures)</text>
+    <rect x="40" y="134" width="120" height="34" rx="5" fill="#0e7c86"/><text x="100" y="155" fill="#fff" text-anchor="middle" font-size="10">digitization result</text>
+    <line x1="160" y1="151" x2="185" y2="151" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar6)"/>
+    <rect x="185" y="134" width="120" height="34" rx="5" fill="#0e7c86"/><text x="245" y="155" fill="#fff" text-anchor="middle" font-size="10">quality assessment</text>
+    <line x1="305" y1="151" x2="330" y2="151" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar6)"/>
+    <rect x="330" y="134" width="120" height="34" rx="5" fill="#0e7c86"/><text x="390" y="155" fill="#fff" text-anchor="middle" font-size="10">storage + sync</text>
+    <line x1="450" y1="151" x2="475" y2="151" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar6)"/>
+    <rect x="475" y="134" width="120" height="34" rx="5" fill="#0e7c86"/><text x="535" y="155" fill="#fff" text-anchor="middle" font-size="10">dashboard canvas</text>
+    <line x1="595" y1="151" x2="620" y2="151" stroke="#5b6675" stroke-width="1.2" marker-end="url(#ar6)"/>
+    <rect x="620" y="134" width="100" height="34" rx="5" fill="#0f2a43"/><text x="670" y="155" fill="#fff" text-anchor="middle" font-size="10">FHIR / CDA</text>
+    <text x="40" y="200" fill="#5b6675" font-size="9.5">JSON shape: {"grid": {...}, "channels": [{"name": "composite", "points": [...]}]}</text>
+  </svg>
+  <div class="figcaption"><b>Figure 6 —</b> Paper-ECG digitization pipeline and the shared digitized-ECG path into sync, dashboard, and handover.</div>
+</div>
+
+<!-- ================= 9. ENCOUNTER / GPS / ETA ================= -->
+<h2><span class="num">9.</span> Encounter / GPS / ETA</h2>
+<p>The case lifecycle is a small, explicit state machine. It drives what the ambulance and hospital UIs allow, and it is the same machine the browser simulator already exercises end-to-end.</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+
+    <text x="145" y="62" fill="#5b6675" font-size="8.5" text-anchor="middle">scene_arrival</text>
+    <text x="340" y="62" fill="#5b6675" font-size="8.5" text-anchor="middle">transport_start</text>
+    <text x="575" y="62" fill="#5b6675" font-size="8.5" text-anchor="middle">hospital_arrival</text>
+
+    <rect x="20" y="95" width="90" height="40" rx="20" fill="#35507a"/>
+    <text x="65" y="119" fill="#fff" text-anchor="middle">active</text>
+    <line x1="110" y1="115" x2="180" y2="115" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+
+    <rect x="180" y="95" width="120" height="40" rx="20" fill="#0e7c86"/>
+    <text x="240" y="119" fill="#fff" text-anchor="middle">on_scene</text>
+    <line x1="300" y1="115" x2="380" y2="115" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+
+    <rect x="380" y="95" width="150" height="40" rx="20" fill="#0e7c86"/>
+    <text x="455" y="119" fill="#fff" text-anchor="middle">transporting</text>
+    <line x1="530" y1="115" x2="620" y2="115" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+
+    <rect x="620" y="95" width="120" height="40" rx="20" fill="#0e7c86"/>
+    <text x="680" y="119" fill="#fff" text-anchor="middle">at_hospital</text>
+
+    <line x1="680" y1="135" x2="680" y2="185" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+    <text x="658" y="172" fill="#5b6675" font-size="8.5" text-anchor="end">case_closed</text>
+    <rect x="635" y="185" width="90" height="40" rx="20" fill="#0f2a43"/>
+    <text x="680" y="209" fill="#fff" text-anchor="middle" font-size="10">closed</text>
+
+    <line x1="455" y1="135" x2="455" y2="205" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+    <text x="472" y="182" fill="#5b6675" font-size="8.5" text-anchor="start">while transporting</text>
+    <rect x="330" y="205" width="250" height="40" rx="6" fill="#35507a"/>
+    <text x="455" y="224" fill="#fff" text-anchor="middle" font-weight="700">hospital accept → prepare</text>
+    <text x="455" y="240" fill="#d9e2f0" text-anchor="middle" font-size="9.5">dashboard decisions · ICU-ready note</text>
+
+    <line x1="455" y1="245" x2="455" y2="285" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar7)"/>
+    <rect x="160" y="285" width="420" height="40" rx="6" fill="#f0f8f2" stroke="#cfe3d4"/>
+    <text x="370" y="304" fill="#1a7f4e" text-anchor="middle" font-size="11">GPS → nearest hospital → ETA</text>
+    <text x="370" y="318" fill="#1a7f4e" text-anchor="middle" font-size="9">services/eta.py · queue shows destination + ETA</text>
+  </svg>
+  <div class="figcaption"><b>Figure 7 —</b> Case lifecycle state machine. transport_start auto-assigns the nearest hospital; GPS updates feed the ETA shown in the hospital queue.</div>
+</div>
+
+<ul>
+  <li><b>GPS → ETA:</b> each <code>gps</code> SyncOp updates the latest position; <code>services/eta.py</code> recomputes <code>nearest_hospital</code> and <code>eta_minutes</code>, surfaced in the live queue.</li>
+  <li><b>Auto-assignment:</b> <code>transport_start</code> with no destination picks the nearest hospital automatically — verified live (destination resolved, ETA populated).</li>
+</ul>
+
+<!-- ================= 10. HOSPITAL COORDINATION ================= -->
+<h2><span class="num">10.</span> Hospital coordination</h2>
+<p>Coordination is realtime: the moment the server commits a sync batch, the hospital dashboard is updated over WebSocket — no polling for vitals or case events.</p>
+<table>
+  <tr><th>Channel</th><th>Endpoint</th><th>Purpose</th></tr>
+  <tr><td>Vitals stream</td><td><code>/ws/cases/{id}/vitals</code></td><td>Live HR / SpO₂ / BP / RR / temp + waveform updates</td></tr>
+  <tr><td>Events stream</td><td><code>/ws/cases/{id}/events</code></td><td>State changes, acceptance/preparation, GPS, ECG-added events</td></tr>
+  <tr><td>Case queue</td><td><code>GET /api/v1/cases</code></td><td>Active cases with destination hospital + ETA</td></tr>
+  <tr><td>Decision endpoints</td><td><code>POST /api/v1/cases/{id}/accept|prepare</code></td><td>Hospital accepts the destination and prepares resources</td></tr>
+</table>
+<div class="callout"><span class="ct">Role boundary:</span> a doctor on the dashboard can view vitals/ECG/handover and accept/prepare; paramedic-only operations are enforced server-side by role.</div>
+
+<!-- ================= 11. HANDOVER ================= -->
+<h2><span class="num">11.</span> Handover / FHIR / CDA</h2>
+<p>At handover, the server assembles the complete episode into two interoperable, standards-shaped exports:</p>
+<ul>
+  <li><b>FHIR R4 document bundle</b> (<code>GET /api/v1/cases/{id}/handover?format=fhir</code>, <code>application/fhir+json</code>) — a <code>Bundle</code> of type <code>document</code> containing Composition, Patient, Encounter, Practitioner, Location, Observations (vital signs), DiagnosticReport, and ECG entries.</li>
+  <li><b>CDA R2-style XML</b> (<code>format=cda</code>, <code>text/xml</code>) — a <code>ClinicalDocument</code> with Record scope, Encounter/Transport, Vital signs, and ECG sections.</li>
+</ul>
+<p>Both exports carry the explicit boundary statement <code>"not a certified medical record"</code> in the rendered text.</p>
+<div class="evidence">
+  <b>Verified:</b> FHIR bundle structure, 9 vital-sign observations, 1 ECG entry, CDA well-formedness, all four CDA sections, and the boundary text are asserted in the automated suite and passed in the live 26/26 journey.
+</div>
+
+<!-- ================= 12. AI BOUNDARY ================= -->
+<h2><span class="num">12.</span> AI / ECG boundary</h2>
+<div class="safeguard-inline">The prototype performs signal capture, quality assessment, digitization, and visualization. It does not autonomously diagnose patients.</div>
+<p>Any future analysis is staged so a human is always the decision point — the design never routes "sensor → AI → diagnosis".</p>
+
+<div class="figure">
+  <svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+    <defs>
+      <marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+      </marker>
+    </defs>
+
+    <rect x="40" y="30" width="220" height="44" rx="6" fill="#0f2a43"/>
+    <text x="150" y="57" fill="#fff" text-anchor="middle" font-weight="700">SENSOR DATA</text>
+    <line x1="150" y1="74" x2="150" y2="84" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar8)"/>
+
+    <rect x="40" y="84" width="220" height="44" rx="6" fill="#0e7c86"/>
+    <text x="150" y="111" fill="#fff" text-anchor="middle" font-weight="700">SIGNAL QUALITY</text>
+    <line x1="150" y1="128" x2="150" y2="138" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar8)"/>
+
+    <rect x="40" y="138" width="220" height="44" rx="6" fill="#0e7c86"/>
+    <text x="150" y="165" fill="#fff" text-anchor="middle" font-weight="700">PREPROCESSING</text>
+    <line x1="150" y1="182" x2="150" y2="192" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar8)"/>
+
+    <rect x="40" y="192" width="220" height="44" rx="6" fill="#0f2a43"/>
+    <text x="150" y="219" fill="#fff" text-anchor="middle" font-weight="700">FEATURE EXTRACTION</text>
+
+    <line x1="260" y1="214" x2="412" y2="136" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar8)"/>
+
+    <rect x="420" y="105" width="240" height="48" rx="6" fill="#b7791f"/>
+    <text x="540" y="128" fill="#fff" text-anchor="middle" font-weight="700">DECISION SUPPORT</text>
+    <text x="540" y="146" fill="#fff3d6" text-anchor="middle" font-size="9">"possible abnormal pattern" — never a diagnosis</text>
+    <line x1="540" y1="153" x2="540" y2="178" stroke="#5b6675" stroke-width="1.5" marker-end="url(#ar8)"/>
+
+    <rect x="420" y="178" width="240" height="48" rx="6" fill="#1a7f4e"/>
+    <text x="540" y="201" fill="#fff" text-anchor="middle" font-weight="700">HUMAN REVIEW</text>
+    <text x="540" y="219" fill="#e2f5ea" text-anchor="middle" font-size="9">doctor decides</text>
+  </svg>
+  <div class="figcaption"><b>Figure 8 —</b> Analysis is staged as decision support with an explicit human-review gate.</div>
+</div>
+
+<table>
+  <tr><th>Data</th><th>Hardware</th><th>Edge software</th><th>Server</th></tr>
+  <tr><td>ECG (live)</td><td>Capture</td><td>Filter · quality · waveform</td><td>Store · display</td></tr>
+  <tr><td>ECG (paper)</td><td>Camera capture</td><td>Digitization pipeline</td><td>Store</td></tr>
+  <tr><td>SpO₂ / BP / temperature</td><td>Sensor</td><td>Validate · filter</td><td>Store · display</td></tr>
+  <tr><td>GPS</td><td>GNSS</td><td>Position · quality</td><td>ETA · dashboard</td></tr>
+  <tr><td>Offline / sync</td><td>—</td><td>SQLite outbox · HLC</td><td>Validation · dedupe</td></tr>
+  <tr><td>Handover</td><td>—</td><td>Assemble data</td><td>FHIR / CDA</td></tr>
+</table>
+
+<!-- ================= 13. MODULE MAPPING ================= -->
+<h2><span class="num">13.</span> Software module mapping</h2>
+<p>All software references below are to the implemented codebase (<code>backend/</code>). This table is the bridge between this document and the code a developer opens next.</p>
+
+<table>
+  <tr><th style="width:34%">Module</th><th>Responsibility</th><th style="width:30%">Entry points</th></tr>
+  <tr><td><code>services/sync/hlc.py</code></td><td>Hybrid logical clock (wall time + counter + device suffix); total ordering</td><td>Used by device + server</td></tr>
+  <tr><td><code>services/sync/device.py</code></td><td>Ambulance device: <code>SQLiteLocalStore</code> outbox, <code>AmbulanceDevice.record/flush</code>, backoff, DLQ</td><td>→ <code>POST /api/v1/sync/push</code></td></tr>
+  <tr><td><code>services/sync/apply.py</code></td><td>Server apply pipeline: ownership check, per-entity appliers, dedupe/LWW, pull changes</td><td><code>POST /api/v1/sync/push</code>, <code>GET /api/v1/sync/changes</code></td></tr>
+  <tr><td><code>routes/sync.py</code></td><td>Device register + push + changes endpoints</td><td><code>POST /api/v1/devices</code>, <code>POST /api/v1/sync/push</code></td></tr>
+  <tr><td><code>services/case_lifecycle.py</code></td><td>Transition rules + transport_start auto-assignment</td><td><code>POST /api/v1/cases/{id}/transitions</code></td></tr>
+  <tr><td><code>services/eta.py</code></td><td>Nearest hospital, ETA, latest GPS</td><td><code>GET /api/v1/cases</code></td></tr>
+  <tr><td><code>routes/ws.py</code> · <code>services/realtime.py</code></td><td>Vitals/events streams, manager subscription, broadcast</td><td><code>/ws/cases/{id}/vitals</code>, <code>/ws/cases/{id}/events</code></td></tr>
+  <tr><td><code>routes/handover.py</code> · <code>routes/ecg.py</code></td><td>FHIR/CDA handover assembly; ECG listing</td><td><code>GET /api/v1/cases/{id}/handover?format=fhir|cda</code></td></tr>
+  <tr><td><code>static/ambulance-simulator/</code></td><td>Browser device UI: IndexedDB outbox, WS, canvas ECG, lifecycle controls</td><td><code>/ambulance-simulator/</code></td></tr>
+  <tr><td><code>static/hospital-dashboard/</code></td><td>Live queue + vitals + ECG canvas + accept/prepare + handover view</td><td><code>/hospital-dashboard/</code></td></tr>
+  <tr><td><code>database.py</code> · <code>models/</code> · <code>alembic/</code></td><td>PostgreSQL schema + migrations</td><td>—</td></tr>
+</table>
+
+<div class="callout"><span class="ct">The Pi 5 maps onto this unchanged:</span> the device client, HLC, sync protocol, server, and dashboard are the same software in both the browser simulator and the hardware target. Only the acquisition services swap their signal source.</div>
+
+<!-- ================= 14. LIMITATIONS ================= -->
+<h2><span class="num">14.</span> Current limitations + next hardware-validation steps</h2>
+<h3>14.1 Known limitations (current state)</h3>
+<ul>
+  <li><b>No physical sensors exercised yet.</b> Acquisition service drivers for ADS1292R / SpO₂ / BP are defined but not hardware-validated.</li>
+  <li><b>Browser-dependent UI acceptance.</b> Canvas ECG rendering, visual cards, IndexedDB state, and print layout are verified by manual acceptance, not automation.</li>
+  <li><b>Device identity fragility (found during validation).</b> Device IDs are random UUIDs stored in browser storage; a server DB reset orphans them and silently rejects sync until storage is cleared. The hardware client must persist the device identity in stable storage and re-register on reset.</li>
+  <li><b>WS session hygiene (fixed during validation).</b> WebSocket handlers previously left read transactions open for the socket lifetime, blocking maintenance DDL; fixed by rolling back the auth transaction immediately.</li>
+  <li><b>No clinical claims.</b> Nothing measured or displayed is clinically validated; the prototype is explicitly non-clinical.</li>
+</ul>
+
+<h3>14.2 Next hardware-validation steps (proposed, dependency-ordered)</h3>
+<ol>
+  <li><b>Raspberry Pi 5 bring-up</b> — Linux image, device app package, outbox/sync client running on-device against the existing server (reuse current code as-is).</li>
+  <li><b>ECG AFE validation</b> — ADS1292R eval board → SPI → sample stream → quality + waveform rendering on the touchscreen.</li>
+  <li><b>GPS validation</b> — NEO-M9N → live <code>gps</code> SyncOps → server ETA from a moving device.</li>
+  <li><b>SpO₂ / temperature validation</b> — sensor hub → validated <code>vital</code> SyncOps.</li>
+  <li><b>4G connectivity</b> — EC25 eval board → real-network reconnect flush test in a coverage gap.</li>
+  <li><b>Touchscreen UI</b> — port the simulator UI to the Pi display; camera capture for paper ECG.</li>
+  <li><b>Power + enclosure</b> — battery/UPS, mounting, cable management; then a full field-drive demo: sensor → device → offline → reconnect → dashboard → handover.</li>
+</ol>
+
+<!-- ================= APPENDIX ================= -->
+<h2 class="pagebreak"><span class="num">A.</span> Appendix — this document as the 3D-video technical foundation</h2>
+<p>The same architecture that drives the physical build is the storyboard for the 3D video. A proposed shot mapping:</p>
+<table>
+  <tr><th>Video segment</th><th>Document section</th><th>What the shot must show</th></tr>
+  <tr><td>Patient + sensors</td><td>§5</td><td>ECG leads, SpO₂ probe, BP cuff, temperature probe on patient</td></tr>
+  <tr><td>Edge gateway</td><td>§4</td><td>Pi 5 unit with touchscreen (vitals grid), camera module</td></tr>
+  <tr><td>Local processing + offline</td><td>§6</td><td>Outbox filling while the signal icon drops; "nothing is lost"</td></tr>
+  <tr><td>Reconnect + sync</td><td>§7</td><td>Link restores; HLC-ordered flush to the server</td></tr>
+  <tr><td>Hospital coordination</td><td>§9–10</td><td>Dashboard queue with ETA, live vitals, accept/prepare</td></tr>
+  <tr><td>Handover</td><td>§11</td><td>FHIR/CDA export passed to the hospital record</td></tr>
+  <tr><td>AI boundary</td><td>§12</td><td>"decision support" framing with a human in the loop — never auto-diagnosis</td></tr>
+</table>
+  <p class="note">When the physical prototype is built, this same diagram set becomes the wiring and software architecture — the video and the build stay consistent by construction.</p>
+
+</div>
+
+</body>
+</html>

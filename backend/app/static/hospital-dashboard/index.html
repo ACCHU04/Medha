@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MEDHA LINK — Hospital Command</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="description" content="MEDHA LINK Hospital Command screen — incoming emergency queue, live vitals, case acceptance, ECG records, and handover export.">
+  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=7">
+  <link rel="stylesheet" href="/assistant.css?v=4">
 </head>
 <body>
   <div id="banner" class="banner" hidden></div>
@@ -68,6 +71,15 @@
             </div>
           </div>
 
+          <h2 class="section-title">LIVE VITALS</h2>
+          <div class="vitals-grid">
+            <div class="vital" id="card-hr"><span>❤️ HEART RATE</span><strong>—</strong><small>BPM</small><em></em></div>
+            <div class="vital" id="card-spo2"><span>🫁 SpO₂</span><strong>—</strong><small>%</small><em></em></div>
+            <div class="vital" id="card-bp"><span>🩸 BLOOD PRESSURE</span><strong>—</strong><small>mmHg</small><em></em></div>
+            <div class="vital" id="card-rr"><span>🌬 RESP RATE</span><strong>—</strong><small>/min</small><em></em></div>
+            <div class="vital" id="card-temp"><span>🌡 TEMP</span><strong>—</strong><small>°C</small><em></em></div>
+          </div>
+
           <h2 class="section-title">TRANSPORT / HOSPITAL</h2>
           <div class="transport-box" id="transport-box">
             <div class="transport-meta">
@@ -81,20 +93,11 @@
               <button id="btn-decline" class="danger">✕ CANNOT ACCEPT</button>
               <button id="btn-prepare" class="ghost">🛏 PREPARE BED</button>
             </div>
-            <canvas id="case-map" class="map" width="360" height="140"></canvas>
+            <div id="case-map" class="map"></div>
           </div>
 
           <h2 class="section-title">ENCOUNTER TIMELINE</h2>
           <ol id="case-timeline" class="timeline"></ol>
-
-          <h2 class="section-title">LIVE VITALS</h2>
-          <div class="vitals-grid">
-            <div class="vital" id="card-hr"><span>❤️ HEART RATE</span><strong>—</strong><small>BPM</small><em></em></div>
-            <div class="vital" id="card-spo2"><span>🫁 SpO₂</span><strong>—</strong><small>%</small><em></em></div>
-            <div class="vital" id="card-bp"><span>🩸 BLOOD PRESSURE</span><strong>—</strong><small>mmHg</small><em></em></div>
-            <div class="vital" id="card-rr"><span>🌬 RESP RATE</span><strong>—</strong><small>/min</small><em></em></div>
-            <div class="vital" id="card-temp"><span>🌡 TEMP</span><strong>—</strong><small>°C</small><em></em></div>
-          </div>
 
           <h2 class="section-title">ECG RECORDS <span class="muted">· decision-support only, not a diagnosis</span></h2>
           <div id="ecg-records" class="ecg-records">
@@ -128,11 +131,62 @@
         </div>
       </section>
     </div>
-  </div>
+
+    <!-- ============================================================
+         AI ASSISTANT PANEL  (docked right rail)
+         IDs: assistant-panel, assistant-tts-toggle, assistant-messages,
+              assistant-suggestions, assistant-input, assistant-send,
+              assistant-mic, assistant-listen-hint
+         ============================================================ -->
+    <aside id="assistant-panel" class="assistant-panel">
+      <div class="assistant-header">
+        <span class="assistant-bot-name">🤖 MEDHA AI</span>
+        <span class="assistant-dot" title="AI ready"></span>
+        <label class="tts-label" title="Read replies aloud">
+          <input type="checkbox" id="assistant-tts-toggle"> 🔊
+        </label>
+        <button id="assistant-close" class="mic-btn" type="button" style="margin-left:4px;font-size:0.7rem;padding:3px 8px!important;" title="Close panel">✕</button>
+      </div>
+
+      <div id="assistant-messages" class="assistant-messages">
+        <!-- Messages injected by voice.js -->
+      </div>
+
+      <!-- Suggested action chips (hospital actions) -->
+      <div id="assistant-suggestions" class="assistant-suggestions">
+        <button class="chip primary" data-action="accept-case" type="button">Accept case</button>
+        <button class="chip" data-action="prepare-bed" type="button">Prepare bed</button>
+        <button class="chip" data-action="refresh-queue" type="button">Refresh queue</button>
+      </div>
+
+      <div class="assistant-input-row">
+        <input id="assistant-input" type="text" placeholder="Ask or type a command…" autocomplete="off">
+        <button id="assistant-mic" class="mic-icon-btn" type="button" title="Voice input (en-IN / hi-IN)">
+          🎙
+          <span id="assistant-listen-hint" class="listen-hint" hidden>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </span>
+        </button>
+        <button id="assistant-send" class="send-btn" type="button" title="Send">➤</button>
+      </div>
+    </aside>
+
+    <!-- Floating toggle (shown when panel is closed) -->
+    <button id="assistant-toggle" type="button" title="Open AI Assistant">🤖</button>
+
+  </div><!-- /#app-view -->
 
   <div id="print-handover"></div>
 
-  <script src="handover.js"></script>
-  <script src="app.js"></script>
+  <script src="/vendor/medha/route.js?v=7"></script>
+  <script src="/vendor/leaflet/leaflet.js?v=7"></script>
+  <script src="handover.js?v=7"></script>
+  <script src="app.js?v=9"></script>
+  <script src="/assistant.js?v=1"></script>
+  <script src="/voice.js?v=2"></script>
 </body>
 </html>
