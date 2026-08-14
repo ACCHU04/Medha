@@ -168,8 +168,9 @@
     ].filter(Boolean).join(" · ");
     return (
       "<div class=\"pv-ecg\">" +
-      "<img class=\"pv-ecg-photo\" alt=\"ECG photo\" src=\"" +
-      escape(_imageUrl(summaryObj.caseId, ecg.id, "normalized")) + "\">" +
+      "<img class=\"pv-ecg-photo\" alt=\"ECG photo\" " +
+      "data-case=\"" + escape(summaryObj.caseId) + "\" " +
+      "data-ecg=\"" + escape(ecg.id) + "\">" +
       "<canvas class=\"pv-ecg-trace\" data-print-trace=\"" + escape(ecg.id) +
       "\" width=\"640\" height=\"120\"></canvas>" +
       "<div class=\"pv-ecg-meta\">" + escape(meta) + "</div>" +

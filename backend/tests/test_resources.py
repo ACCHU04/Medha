@@ -89,16 +89,30 @@ def _create_patient(client, token, idx=0):
     return resp.json()
 
 
-def _create_case(client, token, patient_id, ambulance_id, idx=0, complaint=None):
+def _create_case(
+    client,
+    token,
+    patient_id,
+    ambulance_id,
+    idx=0,
+    complaint=None,
+    gcs=None,
+    medications=None,
+):
+    payload = {
+        "patient_id": str(patient_id),
+        "ambulance_id": str(ambulance_id),
+        "chief_complaint": complaint or f"Complaint {idx}",
+        "severity": "high",
+    }
+    if gcs is not None:
+        payload["gcs"] = gcs
+    if medications is not None:
+        payload["medications"] = medications
     resp = client.post(
         "/api/v1/cases",
         headers=_auth(token),
-        json={
-            "patient_id": str(patient_id),
-            "ambulance_id": str(ambulance_id),
-            "chief_complaint": complaint or f"Complaint {idx}",
-            "severity": "high",
-        },
+        json=payload,
     )
     assert resp.status_code == 201, resp.text
     return resp.json()

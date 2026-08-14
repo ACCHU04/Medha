@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MEDHA LINK — Hospital Command</title>
   <meta name="description" content="MEDHA LINK Hospital Command screen — incoming emergency queue, live vitals, case acceptance, ECG records, and handover export.">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css?v=8">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=7">
   <link rel="stylesheet" href="/assistant.css?v=4">
 </head>
@@ -36,6 +37,7 @@
       <div class="conn-box">
         <div id="conn-status" class="badge">—</div>
         <div><button id="refresh-btn" class="ghost">⟳ Refresh queue</button></div>
+        <div><button id="btn-command" class="ghost">🖥 COMMAND CENTER</button></div>
       </div>
     </header>
 
@@ -94,6 +96,11 @@
               <button id="btn-prepare" class="ghost">🛏 PREPARE BED</button>
             </div>
             <div id="case-map" class="map"></div>
+          </div>
+
+          <h2 class="section-title">PRE-ARRIVAL PACKET <span class="muted">· decision-support summary</span></h2>
+          <div id="packet-preview" class="packet-preview">
+            <div class="empty">Select a case to build its pre-arrival packet.</div>
           </div>
 
           <h2 class="section-title">ENCOUNTER TIMELINE</h2>
@@ -180,12 +187,22 @@
 
   </div><!-- /#app-view -->
 
+  <div id="command-view" hidden>
+    <div class="command-bar">
+      <h1>🖥 ER COMMAND CENTER</h1>
+      <span class="muted" id="command-count"></span>
+      <button id="btn-command-exit" class="ghost">✕ CLOSE</button>
+    </div>
+    <div id="command-grid" class="command-grid"></div>
+  </div>
+
   <div id="print-handover"></div>
 
   <script src="/vendor/medha/route.js?v=7"></script>
   <script src="/vendor/leaflet/leaflet.js?v=7"></script>
   <script src="handover.js?v=7"></script>
-  <script src="app.js?v=9"></script>
+  <script src="packet.js?v=1"></script>
+  <script src="app.js?v=10"></script>
   <script src="/assistant.js?v=1"></script>
   <script src="/voice.js?v=2"></script>
 </body>

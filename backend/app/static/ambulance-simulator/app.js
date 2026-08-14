@@ -40,6 +40,8 @@ const state = {
   route: null,
   ws: null,
   ecg: null,
+  pending: { high: 0, normal: 0 },
+  syncing: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -103,6 +105,22 @@ function renderVitals(v) {
   document.querySelectorAll(".vital").forEach((el) => {
     el.classList.toggle("critical", box === "critical");
   });
+  renderAcuity(v);
+}
+
+function renderAcuity(v) {
+  const cls = $("acuity-class");
+  const detail = $("acuity-detail");
+  if (typeof MedhaClinical === "undefined") return;
+  const n = MedhaClinical.computeNews2(toPayload(v));
+  const sirs = MedhaClinical.computeSirs(toPayload(v), false);
+  const klass = n.risk_class || "low";
+  cls.textContent = klass.toUpperCase() + " · NEWS2 " + n.score;
+  cls.className = "badge acuity-" + klass;
+  detail.textContent =
+    "SIRS " + (sirs.met ? "MET" : "not met") +
+    (sirs.criteria_met ? " (" + sirs.criteria_met + "/4 criteria)" : "") +
+    " · " + MedhaClinical.SCORING_VERSION;
 }
 
 function setEngineState(text) {
@@ -272,6 +290,15 @@ function updateStatus(id, status, error, attempts) {
   );
 }
 
+function opPriority(entity, data) {
+  if (entity === "ecg" || entity === "transition") return "high";
+  if (entity === "vital" && typeof MedhaClinical !== "undefined") {
+    const n = MedhaClinical.computeNews2(data || {});
+    if (n.risk_class === "high") return "high";
+  }
+  return "normal";
+}
+
 function enqueueOp(op) {
   return ensureDb().then((db) =>
     putRecord(db, {
@@ -282,6 +309,7 @@ function enqueueOp(op) {
       device_id: op.device_id,
       hlc: op.hlc,
       payload: op.data,
+      priority: opPriority(op.entity, op.data),
       status: "pending",
       attempts: 0,
       created_at: new Date().toISOString(),
@@ -376,6 +404,13 @@ async function countPending() {
   return rows.length;
 }
 
+async function countPendingByPriority() {
+  const rows = await allPending();
+  const out = { high: 0, normal: 0 };
+  for (const r of rows) out[r.priority === "high" ? "high" : "normal"]++;
+  return out;
+}
+
 async function flushOutbox() {
   const ops = (await allPending()).sort((a, b) => hlcCmp(a.hlc, b.hlc));
   if (ops.length === 0) return { sent: 0, skipped: 0 };
@@ -426,6 +461,8 @@ async function flushOutbox() {
 let retryTimer = null;
 
 async function runFlush() {
+  state.syncing = true;
+  updateOfflineUI();
   try {
     const result = await flushOutbox();
     await updateOfflineUI();
@@ -443,6 +480,9 @@ async function runFlush() {
     }
   } catch (err) {
     enterBuffering(err.message);
+  } finally {
+    state.syncing = false;
+    updateOfflineUI();
   }
 }
 
@@ -490,19 +530,35 @@ function setOffline(on) {
 }
 
 async function updateOfflineUI() {
-  const pending = await countPending();
+  const pending = await countPendingByPriority();
+  state.pending = pending;
+  const total = pending.high + pending.normal;
   const badge = $("net-badge");
   const btn = $("offline-btn");
   if (state.network === "offline") {
-    badge.textContent = "🔴 OFFLINE — BUFFERING (" + pending + ")";
+    badge.textContent = "🔴 OFFLINE — BUFFERING (" + total + ")";
     badge.className = "badge offline";
     btn.textContent = "RESTORE NETWORK";
     btn.classList.add("toggled");
   } else {
-    badge.textContent = "🟢 ONLINE" + (pending > 0 ? " — " + pending + " pending" : "");
+    badge.textContent = "🟢 ONLINE" + (total > 0 ? " — " + total + " pending" : "");
     badge.className = "badge online";
     btn.textContent = "SIMULATE OFFLINE";
     btn.classList.remove("toggled");
+  }
+  const syncAnim = $("sync-anim");
+  if (syncAnim) {
+    syncAnim.hidden = !state.syncing;
+    syncAnim.textContent = state.syncing ? "⟳ SYNCING…" : "";
+  }
+  const box = $("priority-box");
+  const highEl = $("priority-high");
+  const normalEl = $("priority-normal");
+  if (!box) return;
+  box.hidden = !state.case;
+  if (state.case) {
+    highEl.textContent = `🔴 HIGH ×${pending.high}`;
+    normalEl.textContent = `🟢 NORMAL ×${pending.normal}`;
   }
 }
 
@@ -573,12 +629,16 @@ async function createPatient(ev) {
 async function createCase(ev) {
   ev.preventDefault();
   clearError();
+  const gcsRaw = $("gcs").value.trim();
+  const medsRaw = $("medications").value.trim();
   try {
     state.case = await api("POST", "/api/v1/cases", {
       patient_id: state.patient.id,
       ambulance_id: state.ambulance.id,
       chief_complaint: $("complaint").value.trim(),
       severity: $("severity").value,
+      gcs: gcsRaw ? Number(gcsRaw) : null,
+      medications: medsRaw || null,
     });
     $("case-id").textContent = state.case.id;
     $("dest-select").disabled = false;
@@ -1231,20 +1291,21 @@ function updateEcgSend() {
 
 function processEcgImage(image) {
   const quality = window.EcgDigitize.estimateQuality(image);
-  const gridBox = window.EcgDigitize.detectGridBox(image);
+  const normalized = window.EcgDigitize.normalizeColors(image);
+  const gridBox = window.EcgDigitize.detectGridBox(normalized);
   state.ecg = { original: $("ecg-canvas"), normalized: null, quality, waveform: null, gridBox };
   if (gridBox) {
-    const cropped = cropImageData(image, gridBox);
+    const cropped = cropImageData(normalized, gridBox);
     const scale = window.EcgDigitize.estimateGridScale(cropped, { x: 0, y: 0, w: gridBox.w, h: gridBox.h });
     const mmpx = scale.mm_per_px_x > 0 ? scale.mm_per_px_x : 1;
     const waveform = window.EcgDigitize.extractTrace(cropped, { mm_per_px: mmpx, sample_mm: 2, name: "I" });
     state.ecg.normalized = normCanvasFromData(cropped);
     state.ecg.waveform = waveform;
   } else {
-    const waveform = window.EcgDigitize.extractTrace(image, { mm_per_px: 1, sample_mm: 2, name: "I" });
+    const waveform = window.EcgDigitize.extractTrace(normalized, { mm_per_px: 1, sample_mm: 2, name: "I" });
     if (waveform.channels[0].points.length >= 2) {
       state.ecg.waveform = waveform;
-      state.ecg.normalized = normCanvasFromData(image);
+      state.ecg.normalized = normCanvasFromData(normalized);
     }
   }
   drawTracePreview(state.ecg.waveform);
@@ -1472,6 +1533,6 @@ if (typeof document !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HlcTimestamp, HlcClock, hlcCmp, MAX_ATTEMPTS };
+  module.exports = { HlcTimestamp, HlcClock, hlcCmp, MAX_ATTEMPTS, opPriority };
 }
 

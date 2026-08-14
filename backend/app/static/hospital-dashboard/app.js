@@ -2,6 +2,7 @@
 
 const POLL_MS = 15000;
 const SEVERITY_RANK = { critical: 0, high: 1, moderate: 2, low: 3 };
+const RISK_RANK = { high: 0, medium: 1, low: 2 };
 
 const THRESHOLDS = {
   heart_rate: { lo: 50, hi: 130 },
@@ -83,6 +84,27 @@ function severityPill(sev) {
   return `<span class="pill ${s}">${s.toUpperCase()}</span>`;
 }
 
+function acuityRank(c) {
+  const risk = c.latest_risk || {};
+  const r = RISK_RANK[risk.risk_class];
+  return r == null ? 3 : r;
+}
+
+function acuityScore(c) {
+  const risk = c.latest_risk || {};
+  return typeof risk.score === "number" ? risk.score : -1;
+}
+
+function riskPill(c) {
+  const risk = c.latest_risk || {};
+  if (risk.score == null) {
+    return `<span class="pill risk-low">NO NEWS2</span>`;
+  }
+  const cls = RISK_RANK[risk.risk_class] == null ? "low" : risk.risk_class;
+  const sirs = risk.sirs_met ? " · SIRS ✓" : "";
+  return `<span class="pill risk-${cls}">NEWS2 ${risk.score}${sirs}</span>`;
+}
+
 // ---- Auth ---- //
 
 async function login(ev) {
@@ -116,10 +138,15 @@ async function loadCases() {
   try {
     const cases = await api("GET", "/api/v1/cases");
     state.cases = cases.sort((a, b) => {
-      const rank = SEVERITY_RANK[a.severity || "low"] - SEVERITY_RANK[b.severity || "low"];
-      return rank !== 0 ? rank : new Date(b.created_at) - new Date(a.created_at);
+      const rank = acuityRank(a) - acuityRank(b);
+      if (rank !== 0) return rank;
+      const score = acuityScore(b) - acuityScore(a);
+      if (score !== 0) return score;
+      const sev = SEVERITY_RANK[a.severity || "low"] - SEVERITY_RANK[b.severity || "low"];
+      return sev !== 0 ? sev : new Date(b.created_at) - new Date(a.created_at);
     });
     renderQueue();
+    renderCommand();
     const selected = state.selectedId ? state.cases.find((x) => x.id === state.selectedId) : null;
     if (selected) renderDetail(selected);
   } catch (err) {
@@ -142,7 +169,7 @@ function renderQueue() {
         : `<span class="muted">${(c.status || "active").toUpperCase()}</span>`;
     const dest = c.destination_hospital ? `<div class="sub">→ ${c.destination_hospital.name}</div>` : "";
     return `<tr data-id="${c.id}" class="${c.id === state.selectedId ? "selected" : ""}">
-      <td>${severityPill(c.severity)}</td>
+      <td>${riskPill(c)} ${severityPill(c.severity)}</td>
       <td>${label || "—"}${dest}</td>
       <td>#${caseCode(c.id)}</td>
       <td>${etaCell}</td>
@@ -192,6 +219,7 @@ async function selectCase(caseId) {
       state.gpsTrack = rows || [];
       const cur = state.cases.find((x) => x.id === caseId);
       if (cur) drawMap(cur);
+      renderPacket();
     })
     .catch(() => { /* live fixes will arrive over the WebSocket */ });
   loadTimeline(caseId);
@@ -211,6 +239,7 @@ function renderDetail(c) {
     <span class="muted">Age ${p.age ?? "—"} · Sex ${(p.sex || "—").toUpperCase()}</span>
     <span class="muted">Complaint: ${c.chief_complaint || "—"}</span>`;
   $("info-case").innerHTML = `
+    <span class="muted">Acuity</span>${riskPill(c)}
     <span class="muted">Severity</span>${severityPill(c.severity)}
     <span class="muted">Status</span>${(c.status || "—").toUpperCase()}
     <span class="muted">Created</span>${new Date(c.created_at).toLocaleString()}`;
@@ -219,6 +248,7 @@ function renderDetail(c) {
     <strong>${a.vehicle_number || "—"}</strong>
     <span class="muted">Status: ${(a.status || "—").toUpperCase()}</span>`;
   renderTransport(c);
+  renderPacket(c);
 }
 
 // ---- Transport / hospital acceptance (Feature 3) ---- //
@@ -359,8 +389,17 @@ async function hospitalAction(action) {
   if (!c) return;
   const body = {};
   if (action === "accept") {
-    body.hospital_id = (c.destination_hospital && c.destination_hospital.id) || (c.hospital_id || null);
-    if (!body.hospital_id) { showError("No destination set yet"); return; }
+    // Prefer the case's already-assigned destination; fall back to the
+    // logged-in staff member's own hospital (backend enforces they match).
+    body.hospital_id =
+      (c.destination_hospital && c.destination_hospital.id) ||
+      c.hospital_id ||
+      (state.me && state.me.hospital_id) ||
+      null;
+    if (!body.hospital_id) {
+      showError("Cannot accept: no destination hospital set and your account has no hospital assigned.");
+      return;
+    }
   }
   if (action === "decline") {
     body.reason = "No available bed";
@@ -587,27 +626,57 @@ function renderEcgRecords() {
         ? `<div class="hint warn">${r.quality.warnings.join(", ")}</div>`
         : "";
     return `<div class="ecg-record">
-      <img class="ecg-photo" data-ecg="${r.id}" alt="ECG photo"
-        src="/api/v1/cases/${state.selectedId}/ecg/${r.id}/image?kind=normalized">
+      <img class="ecg-photo" data-ecg="${r.id}" data-case="${state.selectedId}" alt="ECG photo">
       <canvas class="ecg-trace" data-trace="${r.id}" width="640" height="150"></canvas>
       <div class="ecg-meta">${meta}</div>
       ${warn}
       <div class="muted">Decision-support only, not a diagnosis</div>
     </div>`;
   }).join("");
+
+  // Fetch each ECG image as an authenticated blob (img.src cannot send Bearer headers)
   for (const img of box.querySelectorAll("img.ecg-photo")) {
-    img.addEventListener("error", () => {
-      if (img.dataset.fallback) { img.remove(); return; }
-      img.dataset.fallback = "1";
-      img.src = img.src.replace("kind=normalized", "kind=original");
-    });
+    const ecgId = img.dataset.ecg;
+    const caseId = img.dataset.case;
+    _loadEcgImage(img, caseId, ecgId, "normalized");
   }
+
   for (const r of state.ecgs) {
     const ch = r.waveform && r.waveform.channels && r.waveform.channels[0];
     const canvas = box.querySelector(`canvas[data-trace="${r.id}"]`);
     if (canvas) drawRecordTrace(canvas, ch);
   }
 }
+
+async function _loadEcgImage(img, caseId, ecgId, kind) {
+  // Revoke any previously set object URL to avoid memory leaks
+  if (img._blobUrl) { URL.revokeObjectURL(img._blobUrl); img._blobUrl = null; }
+
+  const headers = { "Content-Type": "application/json" };
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+
+  try {
+    const resp = await fetch(
+      `/api/v1/cases/${caseId}/ecg/${ecgId}/image?kind=${kind}`,
+      { headers }
+    );
+    if (!resp.ok) {
+      // Fallback: if normalized fails, try original
+      if (kind === "normalized") {
+        return _loadEcgImage(img, caseId, ecgId, "original");
+      }
+      img.alt = "ECG image unavailable";
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    img._blobUrl = url;
+    img.src = url;
+  } catch {
+    img.alt = "ECG image unavailable";
+  }
+}
+
 
 async function loadEcgRecords(caseId) {
   try {
@@ -767,6 +836,7 @@ function connectEventsWebSocket(caseId) {
       state.gpsTrack.push(msg.gps);
       const c = state.cases.find((x) => x.id === caseId);
       if (c) drawMap(c);
+      renderPacket();
       return;
     }
     if (msg.type !== "event") return;
@@ -802,6 +872,7 @@ function connectEventsWebSocket(caseId) {
 
 function refreshHandover() {
   renderHandover();
+  renderPacket();
   updateReplayControls();
 }
 
@@ -820,11 +891,9 @@ function renderHandover() {
   for (const box of [preview, printBox]) {
     drawPrintTraces(box);
     for (const img of box.querySelectorAll("img.pv-ecg-photo")) {
-      img.addEventListener("error", () => {
-        if (img.dataset.fallback) { img.remove(); return; }
-        img.dataset.fallback = "1";
-        img.src = img.src.replace("kind=normalized", "kind=original");
-      });
+      const caseId = img.dataset.case;
+      const ecgId  = img.dataset.ecg;
+      if (caseId && ecgId) _loadEcgImage(img, caseId, ecgId, "normalized");
     }
   }
 }
@@ -949,6 +1018,69 @@ function stopReplay() {
   if (wasActive) renderVitals();
   updateReplayControls();
 }
+
+// ---- Pre-arrival packet + command center (Feature 3) ---- //
+
+function renderPacket(c) {
+  const box = $("packet-preview");
+  if (!box || !window.Packet) return;
+  const p = Packet.build(state);
+  if (!p) {
+    box.innerHTML = `<div class="empty">Select a case to build its pre-arrival packet.</div>`;
+    return;
+  }
+  box.innerHTML = Packet.printHtml(p);
+}
+
+function cmdTile(c) {
+  const p = c.patient || {};
+  const label = [p.age, (p.sex || "").toUpperCase()].filter(Boolean).join(" ");
+  const risk = c.latest_risk || {};
+  const cls = RISK_RANK[risk.risk_class] == null ? "low" : risk.risk_class;
+  const score = risk.score == null ? "NO NEWS2" : "NEWS2 " + risk.score;
+  const sirs = risk.sirs_met ? " · SIRS ✓" : "";
+  const eta =
+    c.status === "transporting" && c.eta_minutes != null
+      ? `ETA ${c.eta_minutes} min`
+      : (c.status || "active").toUpperCase();
+  const dest = c.destination_hospital ? `→ ${c.destination_hospital.name}` : "";
+  return `<div class="cmd-tile risk-${cls}" data-id="${c.id}">
+    <div class="cmd-top"><span class="cmd-code">#${caseCode(c.id)}</span><span class="cmd-eta">${eta}</span></div>
+    <div class="cmd-acuity">${score}${sirs}</div>
+    <div class="cmd-patient">${p.name || "—"}${label ? ` · ${label}` : ""}</div>
+    <div class="cmd-sub">${c.chief_complaint || ""}${dest ? ` ${dest}` : ""}</div>
+  </div>`;
+}
+
+function renderCommand() {
+  const view = $("command-view");
+  const grid = $("command-grid");
+  if (!view || !grid || view.hidden) return;
+  $("command-count").textContent = state.cases.length
+    ? `${state.cases.length} inbound case(s)`
+    : "";
+  if (!state.cases.length) {
+    grid.innerHTML = `<div class="cmd-empty">No inbound emergencies</div>`;
+    return;
+  }
+  grid.innerHTML = state.cases.map(cmdTile).join("");
+}
+
+$("btn-command").addEventListener("click", () => {
+  $("command-view").hidden = false;
+  renderCommand();
+});
+
+$("btn-command-exit").addEventListener("click", () => {
+  $("command-view").hidden = true;
+});
+
+$("command-grid").addEventListener("click", (ev) => {
+  const tile = ev.target.closest("[data-id]");
+  if (!tile) return;
+  $("command-view").hidden = true;
+  selectCase(tile.dataset.id);
+});
 
 // ---- Wire up ---- //
 

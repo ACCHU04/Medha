@@ -404,6 +404,10 @@ def _composition_resource(
         transport_lines.append(f"Severity: {case.severity.value}")
     if case.chief_complaint:
         transport_lines.append(f"Chief complaint: {case.chief_complaint}")
+    if case.gcs is not None:
+        transport_lines.append(f"GCS: {case.gcs}")
+    if case.medications:
+        transport_lines.append(f"Medications: {case.medications}")
     if hospital is not None:
         transport_lines.append(f"Destination: {hospital.name}, {hospital.city}")
     if case.acceptance_status is not None:
@@ -600,6 +604,10 @@ def build_cda(db: Session, case_id: UUID, user: User) -> str:
         transport.append(f"Severity: {case.severity.value}")
     if case.chief_complaint:
         transport.append(f"Chief complaint: {case.chief_complaint}")
+    if case.gcs is not None:
+        transport.append(f"GCS: {case.gcs}")
+    if case.medications:
+        transport.append(f"Medications: {case.medications}")
     if hospital is not None:
         transport.append(f"Destination: {hospital.name}, {hospital.city}")
     if case.acceptance_status is not None:

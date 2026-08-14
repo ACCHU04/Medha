@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MEDHA LINK — Ambulance</title>
   <meta name="description" content="MEDHA LINK Ambulance screen — paramedic patient management, live vitals monitoring, and emergency case dispatch.">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css?v=8">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css?v=7">
   <link rel="stylesheet" href="/assistant.css?v=4">
 </head>
@@ -76,6 +77,8 @@
             <option value="critical">Critical</option>
           </select>
         </label>
+        <label>GCS <input id="gcs" type="number" min="3" max="15" placeholder="15" title="Glasgow Coma Scale 3–15 (optional)"></label>
+        <label>Medications <input id="medications" placeholder="Oxygen 15 L/min" title="Medications administered (optional)"></label>
         <button type="submit" id="create-case-btn" disabled>CREATE EMERGENCY CASE</button>
       </form>
       <p class="hint">Case id: <code id="case-id">—</code></p>
@@ -89,6 +92,10 @@
         <div class="vital"><span>🩸 BP</span><strong id="v-bp">—</strong><small>mmHg</small></div>
         <div class="vital"><span>🌡 Temp</span><strong id="v-temp">—</strong><small>°C</small></div>
         <div class="vital"><span>🌬 RR</span><strong id="v-rr">—</strong><small>/min</small></div>
+      </div>
+      <div class="acuity-box" id="acuity-box">
+        <span class="badge idle" id="acuity-class">NO NEWS2</span>
+        <span class="muted" id="acuity-detail">Start monitoring to compute NEWS2 acuity</span>
       </div>
       <div class="controls">
         <button id="start-btn" class="primary" disabled>▶ START MONITORING</button>
@@ -128,7 +135,12 @@
       <h2>CONNECTIVITY</h2>
       <div class="conn-row">
         <span id="net-badge" class="badge online">🟢 ONLINE</span>
+        <span id="sync-anim" class="sync-anim" hidden>⟳ SYNCING…</span>
         <button id="offline-btn" class="ghost" disabled>SIMULATE OFFLINE</button>
+      </div>
+      <div id="priority-box" class="priority-box" hidden>
+        <span id="priority-high">🔴 HIGH ×0</span>
+        <span id="priority-normal">🟢 NORMAL ×0</span>
       </div>
       <p class="hint" id="sync-status">Vitals queue to IndexedDB and flush via /api/v1/sync/push</p>
     </section>
@@ -205,10 +217,11 @@
   </div><!-- /#app-view -->
 
   <script src="/vendor/medha/route.js?v=7"></script>
+  <script src="/vendor/medha/clinical.js?v=1"></script>
   <script src="/vendor/leaflet/leaflet.js?v=7"></script>
   <script src="ecg.js?v=7"></script>
   <script src="ecg-samples.js?v=7"></script>
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
   <script src="/assistant.js?v=1"></script>
   <script src="/voice.js?v=2"></script>
 </body>

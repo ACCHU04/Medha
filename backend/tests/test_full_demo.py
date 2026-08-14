@@ -4,11 +4,13 @@ Chains the entire MEDHA LINK scenario against the real API (TestClient) and
 the production offline device client (``app.services.sync.device``), exactly as
 the ambulance simulator behaves:
 
-    device register -> patient -> case -> scene_arrival -> transport_start
-    (nearest hospital + ETA) -> hospital accept -> prepare -> online vitals ->
-    deterioration (critical reading) -> offline buffering (device outbox) ->
-    reconnect flush + server-side dedupe -> digitized ECG -> FHIR + CDA
-    handover export -> hospital_arrival -> case_closed -> ambulance freed.
+    device register -> patient -> case (with GCS + medications) ->
+    scene_arrival -> transport_start (nearest hospital + ETA) -> hospital
+    accept -> prepare -> online vitals -> deterioration (critical reading,
+    latest_risk snapshot) -> offline buffering (device outbox) -> reconnect
+    flush + server-side dedupe -> digitized ECG -> FHIR + CDA handover export
+    (incl. GCS / medications transport lines) -> hospital_arrival ->
+    case_closed -> ambulance freed.
 
 This proves the full Feature 3/4/5/6 chain in one journey rather than repeating
 the individual feature tests. Browser-only concerns (canvas rendering, visual
@@ -166,10 +168,14 @@ def test_full_demo_journey(client: TestClient, tmp_path):
             "ambulance_id": str(ambulance.id),
             "chief_complaint": "Chest pain",
             "severity": "high",
+            "gcs": 12,
+            "medications": "Aspirin 300 mg PO",
         },
     )
     assert case.status_code == 201, case.text
     case_id = case.json()["id"]
+    assert case.json()["gcs"] == 12
+    assert case.json()["medications"] == "Aspirin 300 mg PO"
 
     # 2. Scene arrival -> transport (auto nearest = MEDHA City Hospital)
     _transition(client, token, case_id, "scene_arrival")
@@ -234,6 +240,13 @@ def test_full_demo_journey(client: TestClient, tmp_path):
     )
     result = amb_device.flush()
     assert result.online and len(result.synced) == 1
+
+    queue = client.get("/api/v1/cases", headers=_auth(token))
+    assert queue.status_code == 200
+    row = next(r for r in queue.json() if r["id"] == case_id)
+    assert row["latest_risk"]["risk_class"] == "high"
+    assert row["latest_risk"]["score"] >= 7
+    assert row["latest_risk"]["sirs_met"] is True
 
     # 6. Offline buffering: record 5 vitals while the link is down
     transport.online = False
@@ -328,6 +341,9 @@ def test_full_demo_journey(client: TestClient, tmp_path):
     assert "not a certified medical record" in sections["Record scope"]["text"]["div"]
     assert len(sections["Vital signs"]["entry"]) == 9
     assert len(sections["ECG"]["entry"]) == 1
+    transport_div = sections["Encounter / Transport"]["text"]["div"]
+    assert "GCS: 12" in transport_div
+    assert "Medications: Aspirin 300 mg PO" in transport_div
 
     cda = client.get(
         f"/api/v1/cases/{case_id}/handover",
@@ -346,6 +362,8 @@ def test_full_demo_journey(client: TestClient, tmp_path):
     all_text = "\n".join(node.text for node in root.iter() if node.text)
     assert "not a certified medical record" in all_text
     assert "MEDHA City Hospital" in all_text
+    assert "GCS: 12" in all_text
+    assert "Medications: Aspirin 300 mg PO" in all_text
 
     # 11. Arrival + close; ambulance returns to available
     arrived = _transition(client, token, case_id, "hospital_arrival")

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..models.enums import CaseAcceptance, CaseSeverity, CaseStatus
 from .ambulance import AmbulanceOut
@@ -17,6 +17,8 @@ class CaseCreate(BaseModel):
     ambulance_id: UUID
     chief_complaint: str | None = None
     severity: CaseSeverity | None = None
+    gcs: int | None = Field(default=None, ge=3, le=15)
+    medications: str | None = None
 
 
 class AlternativeHospital(BaseModel):
@@ -43,6 +45,8 @@ class CaseOut(BaseModel):
     severity: CaseSeverity | None
     status: CaseStatus
     chief_complaint: str | None
+    gcs: int | None = None
+    medications: str | None = None
     created_by_id: UUID | None
     created_at: datetime
     closed_at: datetime | None
@@ -60,3 +64,4 @@ class CaseOut(BaseModel):
     recommended_hospital: HospitalOut | None = None
     recommendation: RecommendationOut | None = None
     eta_minutes: int | None = None
+    latest_risk: dict | None = None

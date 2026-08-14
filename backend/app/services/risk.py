@@ -23,20 +23,33 @@ from .clinical import SCORING_VERSION, compute_news2, compute_sirs
 
 
 def _latest_risk_event(db: Session, case_id: UUID) -> CaseEvent | None:
-    stmt = (
+    events = latest_risk_event_by_case(db, [case_id])
+    return events.get(case_id)
+
+
+def latest_risk_event_by_case(
+    db: Session, case_ids: list[UUID]
+) -> dict[UUID, CaseEvent]:
+    """One query for the newest ``risk_changed`` event per case (DISTINCT ON
+    in Postgres). The event's payload is the single source of truth for the
+    queue's acuity snapshot — risk is never recomputed at read time."""
+    if not case_ids:
+        return {}
+    rows = db.execute(
         select(CaseEvent)
         .where(
-            CaseEvent.case_id == case_id,
+            CaseEvent.case_id.in_(case_ids),
             CaseEvent.event_type == CaseEventType.risk_changed,
         )
+        .distinct(CaseEvent.case_id)
         .order_by(
+            CaseEvent.case_id,
             CaseEvent.hlc.desc().nullslast(),
             CaseEvent.created_at.desc(),
             CaseEvent.id.desc(),
         )
-        .limit(1)
-    )
-    return db.scalars(stmt).first()
+    ).scalars()
+    return {event.case_id: event for event in rows}
 
 
 def _news2_snapshot(payload: dict | None) -> dict | None:
@@ -51,6 +64,26 @@ def _sirs_snapshot(payload: dict | None) -> dict | None:
         return None
     current = payload.get("sirs", {}).get("current")
     return current if isinstance(current, dict) else None
+
+
+def risk_snapshot(payload: dict | None) -> dict | None:
+    """The persisted NEWS2-5 + SIRS snapshot as exposed to the hospital queue.
+
+    Derived only from a persisted ``risk_changed`` event payload; never
+    recalculated during case listing.
+    """
+    if payload is None:
+        return None
+    news2 = _news2_snapshot(payload)
+    if news2 is None:
+        return None
+    sirs = _sirs_snapshot(payload)
+    return {
+        "score": news2.get("score"),
+        "risk_class": news2.get("risk_class"),
+        "sirs_met": bool(sirs.get("met")) if sirs is not None else False,
+        "scoring_version": payload.get("scoring_version"),
+    }
 
 
 def evaluate_and_persist_risk(

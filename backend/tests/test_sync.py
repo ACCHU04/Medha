@@ -265,6 +265,100 @@ def test_older_hlc_skipped(client: TestClient):
         db.close()
 
 
+def test_sync_case_round_trips_structured_fields(client: TestClient):
+    """Offline case create + update carry gcs/medications through the outbox."""
+    _, token, ambulance, device, clock = _world(client)
+    pid, cid = uuid.uuid4(), uuid.uuid4()
+    ops = [
+        SyncOp(
+            op="upsert", entity="patient", id=pid,
+            device_id=device["id"], hlc=clock.now(),
+            data={"name": "Offline GCS", "age": 40, "sex": "f"},
+        ),
+        SyncOp(
+            op="upsert", entity="case", id=cid,
+            device_id=device["id"], hlc=clock.now(),
+            data={
+                "patient_id": str(pid),
+                "ambulance_id": str(ambulance.id),
+                "chief_complaint": "sync structured",
+                "severity": "high",
+                "gcs": 9,
+                "medications": "Oxygen 15 L/min",
+            },
+        ),
+    ]
+    assert len(_push(client, token, ops).json()["applied"]) == 2
+
+    db = SessionLocal()
+    try:
+        case = db.get(EmergencyCase, cid)
+        assert case.gcs == 9
+        assert case.medications == "Oxygen 15 L/min"
+    finally:
+        db.close()
+
+    # HLC-newer update changes the structured fields with an audit event.
+    update = SyncOp(
+        op="upsert", entity="case", id=cid,
+        device_id=device["id"], hlc=clock.now(),
+        data={
+            "patient_id": str(pid),
+            "ambulance_id": str(ambulance.id),
+            "severity": "high",
+            "chief_complaint": "sync structured",
+            "gcs": 14,
+            "medications": "GTN 400 mcg SL",
+        },
+    )
+    assert len(_push(client, token, [update]).json()["applied"]) == 1
+
+    db = SessionLocal()
+    try:
+        case = db.get(EmergencyCase, cid)
+        assert case.gcs == 14
+        assert case.medications == "GTN 400 mcg SL"
+        audits = db.query(CaseEvent).filter_by(case_id=cid).all()
+        updates = [
+            e for e in audits if e.event_type.value == "state_updated"
+            and "gcs" in e.payload.get("changes", {})
+        ]
+        assert len(updates) == 1
+        assert updates[0].payload["changes"]["gcs"] == {
+            "previous": 9, "incoming": 14,
+        }
+    finally:
+        db.close()
+
+
+def test_sync_rejects_invalid_gcs(client: TestClient):
+    """GCS must be an integer in 3..15; out-of-range is rejected."""
+    _, token, ambulance, device, clock = _world(client)
+    pid = uuid.uuid4()
+    ops = [
+        SyncOp(
+            op="upsert", entity="patient", id=pid,
+            device_id=device["id"], hlc=clock.now(),
+            data={"name": "Bad GCS", "age": 40, "sex": "m"},
+        ),
+        SyncOp(
+            op="upsert", entity="case", id=uuid.uuid4(),
+            device_id=device["id"], hlc=clock.now(),
+            data={
+                "patient_id": str(pid),
+                "ambulance_id": str(ambulance.id),
+                "severity": "high",
+                "gcs": 2,
+            },
+        ),
+    ]
+    resp = _push(client, token, ops)
+    body = resp.json()
+    assert len(body["applied"]) == 1
+    assert body["skipped"][0]["entity"] == "case"
+    assert "invalid gcs" in body["skipped"][0]["reason"]
+
+
 def test_vital_dedupe_by_id(client: TestClient):
     _, token, ambulance, device, clock = _world(client)
     ops, pid, cid, vid, eid = _offline_batch(clock, ambulance.id, device["id"])

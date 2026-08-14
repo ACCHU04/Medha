@@ -9,7 +9,7 @@
 ## 0. Contracts (non-negotiable)
 
 1. **NEWS2/SIRS parity** — one shared specification implemented in `clinical.js` (instant UI) and `clinical.py` (handover/SMS/geofence authority). Locked by Node contract tests. A case must never show two different risk levels.
-2. **Offline behavior** — local queue → continue capture → sync → dedupe → HLC. UI shows only `🟢 ONLINE / ✓ SYNCED` or `🟠 OFFLINE / N RECORDS QUEUED`. No HLC terminology exposed.
+2. **Offline behavior** — local queue → continue capture → sync → dedupe → HLC. UI shows only `🟢 ONLINE / ✓ SYNCED` or `🟠 OFFLINE / N RECORDS QUEUED`, grouped by priority (`🔴 HIGH ×N · 🟢 NORMAL ×M`, see §E), plus an animated `SYNCING…` indicator while a flush is in flight. No HLC terminology exposed.
 3. **Timeline** — vitals + events + GPS merged by HLC order into a single encounter replay.
 4. **Hospital workflow** — transport → destination → accept → prepare → geofence → READY FOR ARRIVAL → hospital arrival.
 5. **Safety language** — risk/screening/decision-support wording only ("NEWS2-5: High risk — clinician review required"). Never diagnosis or automatic treatment. ECG boundary statement stays visible.
@@ -206,3 +206,93 @@ HLC ordering across mixed kinds · empty case · timeline includes risk transiti
 - **Phase A (enabler):** multi-lead capture (operator crops each lead box; waveform `channels[]`).
 - **Phase B (heuristic, research-only):** ST deviation 60–80 ms after J point; ≥1 mm in ≥2 contiguous limb leads (or ≥2 mm V2–V3 men / 1.5 mm women); stored in `ecg_tracings.quality.stemi_heuristic`; with `insufficient_leads` suppression. UI wording: "POSSIBLE STEMI — research heuristic, verify with cardiologist."
 - **Status:** after multi-lead digitizer; not in this freeze.
+
+---
+
+## A. Case acuity snapshot (`latest_risk`)
+
+### Design
+- `CaseOut` gains `latest_risk: dict | None`, populated from the **most recent persisted `risk_changed` event** — derived only from persisted events, never recomputed at list time (safeguard).
+- Bulk query: `app/services/risk.py::latest_risk_event_by_case(db, case_ids)` uses a single `DISTINCT ON (case_id)` query; `risk_snapshot(payload)` flattens `{score, risk_class, sirs_met, scoring_version}`.
+- `serialize_cases` computes snapshots in one pass; `serialize_case` accepts an optional `latest_risk` override (sentinel `_UNSET_RISK`) and queries lazily when omitted.
+- `latest_risk` is `None` until the first `risk_changed` baseline event exists (no vitals yet).
+
+### Consumers
+Dashboard queue sort (§D) · pre-arrival packet (§D) · command center tiles (§D).
+
+### Tests
+`test_dashboard.py`: snapshot before/after critical vitals · newest-event-wins (score 12 → 11) · single-case endpoint parity.
+
+---
+
+## B. Structured handover fields — GCS + medications
+
+### Schema (migration)
+- `emergency_cases.gcs` — SmallInteger, nullable (validated **3–15**).
+- `emergency_cases.medications` — Text, nullable (free-text, not a med-database).
+- Migration `f7a8b9c0d1e2_add_handover_fields.py`.
+
+### Validation
+- REST: `CaseCreate.gcs` via pydantic `Field(ge=3, le=15)`.
+- Sync: `apply.py::_parse_gcs` — out-of-range → `OpRejected("invalid gcs")` (whole op skipped, case unaffected).
+
+### Handover output
+FHIR Composition transport section + CDA narrative include `GCS: N` and `Medications: ...` **only when present** (minimal-case handovers unchanged).
+
+### Tests
+`test_handover.py` (FHIR/__CDA__/minimal) · `test_sync.py` (round-trip create + update with audit diff, invalid-GCS rejection) · `test_resources.py::_create_case` kwargs.
+
+---
+
+## C. ECG color normalization
+
+### Design
+- `ecg.js::normalizeColors(image)` — per-channel 0.5/99.5-percentile white/black-point stretch (`_percentileHistogram`), guarded by a `span >= 12` luminance check (avoids blowing out a flat image); returns a **new buffer**, input untouched. Exported on `EcgDigitize` and `module.exports`.
+- Simulator pipeline `processEcgImage` (app.js): `estimateQuality` on the **original** → `normalizeColors` → `detectGridBox(normalized)` → crop → `estimateGridScale` → `extractTrace`; the no-grid fallback branch also runs on the normalized image.
+
+### Contract harness
+`tests/js/normalize_colors_check.cjs` uses the real sample generator (`ecg-samples.js`): dark sample lifted to ≥160 mean gray · grid + waveform recovered on dark/low-contrast · clean sample not regressed. Python gate in `test_js_ecg.py` (`_run(harness)`).
+
+---
+
+## D. Hospital dashboard — acuity queue, pre-arrival packet, command center
+
+### Queue
+- Sort (loadCases): `RISK_RANK` (high=0, medium=1, low=2, no-data=3) → NEWS2 score desc → severity → created_at desc.
+- PRIORITY cell: `riskPill(c)` = `NEWS2 <score>` colored by risk class + `· SIRS ✓` tag (or `NO NEWS2` when no snapshot yet), alongside the existing severity pill.
+
+### Pre-arrival packet (`packet.js`, DOM-free, mirror of `handover.js`)
+- `Packet.build(state)` → plain packet object (PATIENT / ACUITY / VITALS / ECG / TRANSPORT / HOSPITAL) from the dashboard's live state; `null` when no case selected.
+- `Packet.printHtml(p)` → compact card with escaping + the standard boundary statement; `module.exports` + `window.Packet`.
+- Rendered into `#packet-preview`; refreshed on detail render, GPS fix, and every `refreshHandover`.
+
+### Command center
+- `index.html`: `#command-view` full-screen overlay + `#command-grid`; header toggle button; exiting (or clicking a tile) selects the case and closes.
+- `app.js::renderCommand` reuses the acuity-sorted `state.cases`; tiles show `#code`, ETA/status, `NEWS2 <score>` + SIRS, patient, complaint → destination; live-updates on each `loadCases` poll.
+
+### Harness
+`tests/js/packet_check.cjs` + `test_js_packet.py` (mapping, escaping, sections, minimal case, missing case → null).
+
+---
+
+## E. Ambulance simulator — acuity readout + priority offline queue
+
+### Acuity readout
+- `index.html` loads `/vendor/medha/clinical.js` (same NEWS2-5/SIRS spec as the backend, contract-locked).
+- LIVE VITALS gains an acuity box: `renderAcuity(v)` computes `computeNews2` + `computeSirs` on the current vital → badge `HIGH/MEDIUM/LOW · NEWS2 <score>` + `SIRS met/not met (n/4) · news2-5-v1`.
+
+### GCS + medications inputs
+- EMERGENCY CASE form adds optional `gcs` (3–15) and `medications`; `createCase` sends them (empty → null).
+
+### Priority offline queue (no IndexedDB migration)
+- `app.js::opPriority(entity, data)` — derived client-side: `ecg`/`transition` → **high**; `vital` whose `computeNews2(data).risk_class === "high"` → **high**; everything else (normal vitals, gps) → **normal**.
+- Priority stored on each outbox record (`enqueueOp`); `updateOfflineUI` renders `🔴 HIGH ×N · 🟢 NORMAL ×M` in the CONNECTIVITY card and toggles the animated `⟳ SYNCING…` indicator via `state.syncing` around `runFlush` (try/finally).
+
+### Harness
+`tests/js/priority_check.cjs` + `test_js_priority.py` (ecg/transition/high-news2 vital → high; normal vital + gps → normal; graceful fallback when `MedhaClinical` absent).
+
+---
+
+## F. E2E gate extensions (`test_full_demo.py`)
+
+The full journey now also asserts: case creation carries `gcs`/`medications` (round-trip) · after the critical reading the queue row exposes `latest_risk {risk_class: "high", score ≥ 7, sirs_met: true}` · FHIR `Encounter / Transport` section and the CDA narrative include the `GCS: 12` / `Medications:` transport lines.

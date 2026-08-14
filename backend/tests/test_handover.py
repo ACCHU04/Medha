@@ -145,6 +145,75 @@ def test_handover_fhir_minimal_case(client):
     assert sections["Vital signs"]["entry"] == []
     assert sections["ECG"]["entry"] == []
     assert resources["Encounter"]["status"] == "in-progress"
+    assert "GCS:" not in sections["Encounter / Transport"]["text"]["div"]
+    assert "Medications:" not in sections["Encounter / Transport"]["text"]["div"]
+
+
+def test_handover_fhir_includes_structured_fields(client):
+    """GCS + medications appear in the FHIR Composition only when present."""
+    from test_resources import (
+        _create_case,
+        _create_patient,
+        _make_paramedic,
+        _seed_ambulance,
+    )
+
+    user, token = _make_paramedic(client)
+    ambulance = _seed_ambulance(user["id"])
+    patient = _create_patient(client, token)
+    case = _create_case(
+        client,
+        token,
+        patient["id"],
+        ambulance.id,
+        complaint="Chest pain",
+        gcs=11,
+        medications="Aspirin 325 mg PO",
+    )
+    assert case["gcs"] == 11
+    assert case["medications"] == "Aspirin 325 mg PO"
+
+    bundle = _handover(client, token, case["id"]).json()
+    resources = _resources(bundle)
+    composition = resources["Composition"]
+    sections = {s["title"]: s for s in composition["section"]}
+    div = sections["Encounter / Transport"]["text"]["div"]
+    assert "GCS: 11" in div
+    assert "Medications: Aspirin 325 mg PO" in div
+
+
+def test_handover_cda_includes_structured_fields(client):
+    from test_resources import (
+        _create_case,
+        _create_patient,
+        _make_paramedic,
+        _seed_ambulance,
+    )
+
+    user, token = _make_paramedic(client)
+    ambulance = _seed_ambulance(user["id"])
+    patient = _create_patient(client, token)
+    case = _create_case(
+        client,
+        token,
+        patient["id"],
+        ambulance.id,
+        complaint="Chest pain",
+        gcs=14,
+        medications="GTN 400 mcg SL",
+    )
+
+    resp = _handover(client, token, case["id"], fmt="cda")
+    assert resp.status_code == 200, resp.text
+    root = ElementTree.fromstring(resp.text)
+    paragraphs = [
+        node.text
+        for node in root.iter(f"{{{NS}}}paragraph")
+        if node.text
+    ]
+    joined = "\n".join(paragraphs)
+    assert "GCS: 14" in joined
+    assert "Medications: GTN 400 mcg SL" in joined
 
 
 def test_handover_fhir_access_matrix(client):

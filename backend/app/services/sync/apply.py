@@ -101,6 +101,18 @@ def _parse_uuid(value, label: str) -> UUID | None:
         raise OpRejected(f"invalid {label}") from None
 
 
+def _parse_gcs(value) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except (ValueError, TypeError):
+        raise OpRejected("invalid gcs") from None
+    if parsed < 3 or parsed > 15:
+        raise OpRejected("invalid gcs")
+    return parsed
+
+
 def _get_case(db: Session, case_id, user) -> EmergencyCase:
     parsed = _parse_uuid(case_id, "case_id")
     if parsed is None:
@@ -223,6 +235,8 @@ def _apply_case(db: Session, user, op: SyncOp) -> None:
         except ValueError:
             raise OpRejected("invalid status") from None
     chief_complaint = op.data.get("chief_complaint")
+    gcs = _parse_gcs(op.data.get("gcs"))
+    medications = op.data.get("medications")
     hospital_id = _parse_uuid(op.data.get("hospital_id"), "hospital_id")
     if hospital_id is not None and db.get(Hospital, hospital_id) is None:
         raise OpRejected("referenced hospital not found")
@@ -248,6 +262,13 @@ def _apply_case(db: Session, user, op: SyncOp) -> None:
             changed["chief_complaint"] = {
                 "previous": existing.chief_complaint,
                 "incoming": chief_complaint,
+            }
+        if gcs != existing.gcs:
+            changed["gcs"] = {"previous": existing.gcs, "incoming": gcs}
+        if medications != existing.medications:
+            changed["medications"] = {
+                "previous": existing.medications,
+                "incoming": medications,
             }
         if hospital_id != existing.hospital_id:
             changed["hospital_id"] = {
@@ -275,6 +296,8 @@ def _apply_case(db: Session, user, op: SyncOp) -> None:
         existing.status = status
         existing.severity = severity
         existing.chief_complaint = chief_complaint
+        existing.gcs = gcs
+        existing.medications = medications
         existing.hospital_id = hospital_id
         existing.device_id = device.id
         existing.hlc = op.hlc
@@ -291,6 +314,8 @@ def _apply_case(db: Session, user, op: SyncOp) -> None:
             severity=severity,
             status=status,
             chief_complaint=chief_complaint,
+            gcs=gcs,
+            medications=medications,
             created_by_id=user.id,
             device_id=device.id,
             hlc=op.hlc,
@@ -622,6 +647,8 @@ def _case_data(case: EmergencyCase) -> dict:
         "severity": case.severity.value if case.severity else None,
         "status": case.status.value,
         "chief_complaint": case.chief_complaint,
+        "gcs": case.gcs,
+        "medications": case.medications,
     }
 
 

@@ -114,6 +114,60 @@ def test_admin_vitals_history_200(client: TestClient):
     assert len(resp.json()) == 1
 
 
+def test_case_list_exposes_latest_risk_snapshot(client: TestClient):
+    """Acuity snapshot must come from the persisted risk_changed event only,
+    never recomputed during case listing."""
+    _, para_token, _, _, case = _world(client)
+    _, admin_token = _make_admin(client)
+
+    rows = client.get("/api/v1/cases", headers=_auth(admin_token)).json()
+    row = next(r for r in rows if r["id"] == case["id"])
+    assert row["latest_risk"] is None
+
+    client.post(
+        f"/api/v1/cases/{case['id']}/vitals",
+        headers=_auth(para_token),
+        json=VITALS_CRITICAL,
+    )
+
+    rows = client.get("/api/v1/cases", headers=_auth(admin_token)).json()
+    row = next(r for r in rows if r["id"] == case["id"])
+    snap = row["latest_risk"]
+    assert snap is not None
+    assert snap["score"] == 12
+    assert snap["risk_class"] == "high"
+    assert snap["sirs_met"] is True
+    assert snap["scoring_version"] == "news2-5-v1"
+
+    body = client.get(
+        f"/api/v1/cases/{case['id']}", headers=_auth(admin_token)
+    ).json()
+    assert body["latest_risk"]["score"] == 12
+    assert body["latest_risk"]["risk_class"] == "high"
+
+
+def test_latest_risk_tracks_newest_event(client: TestClient):
+    """The snapshot tracks the newest persisted event: a NEWS2 score change
+    (critical 12 -> normal 11) must update the queue snapshot."""
+    _, para_token, _, _, case = _world(client)
+    _, admin_token = _make_admin(client)
+
+    client.post(
+        f"/api/v1/cases/{case['id']}/vitals",
+        headers=_auth(para_token),
+        json=VITALS_CRITICAL,
+    )
+    client.post(
+        f"/api/v1/cases/{case['id']}/vitals",
+        headers=_auth(para_token),
+        json=VITALS_NORMAL,
+    )
+
+    rows = client.get("/api/v1/cases", headers=_auth(admin_token)).json()
+    row = next(r for r in rows if r["id"] == case["id"])
+    assert row["latest_risk"]["score"] == 11
+
+
 def test_ws_admin_receives_normal_then_critical(client: TestClient):
     _, para_token, _, _, case = _world(client)
     _, admin_token = _make_admin(client)

@@ -32,6 +32,62 @@ function _isWavePixel(c) {
   return gray < 150 && mx - mn < 70;
 }
 
+/* ---- Color normalization ---- */
+
+function _percentileHistogram(hist, target, total) {
+  let count = 0;
+  const wanted = total * target;
+  for (let v = 0; v < 256; v++) {
+    count += hist[v];
+    if (count >= wanted) return v;
+  }
+  return 255;
+}
+
+function normalizeColors(image) {
+  /* Whiten the paper background and stretch the ink contrast per channel.
+   *
+   * Percentile-based per-channel white/black point stretch: the 0.5th and
+   * 99.5th percentile gray maps to 0 and 255, which removes color casts,
+   * lifts too-dark samples to paper-white, and keeps grid-line hue so
+   * grid detection still works. Returns a NEW buffer (input untouched).
+   */
+  const w = image.width;
+  const h = image.height;
+  const src = image.data;
+  const n = w * h;
+  const out = new Uint8ClampedArray(src.length);
+  if (n === 0) return { width: w, height: h, data: out };
+
+  const hist = [new Array(256).fill(0), new Array(256).fill(0), new Array(256).fill(0)];
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      hist[c][src[i * 4 + c]]++;
+    }
+  }
+
+  const lo = [];
+  const hi = [];
+  for (let c = 0; c < 3; c++) {
+    lo.push(_percentileHistogram(hist[c], 0.005, n));
+    hi.push(_percentileHistogram(hist[c], 0.995, n));
+  }
+
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      const v = src[i * 4 + c];
+      const span = hi[c] - lo[c];
+      let mapped = v;
+      if (span >= 12) {
+        mapped = Math.round(((v - lo[c]) / span) * 255);
+      }
+      out[i * 4 + c] = Math.max(0, Math.min(255, mapped));
+    }
+    out[i * 4 + 3] = 255;
+  }
+  return { width: w, height: h, data: out };
+}
+
 /* ---- Quality ---- */
 
 function estimateQuality(image) {
@@ -224,6 +280,7 @@ function extractTrace(image, options) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    normalizeColors,
     estimateQuality,
     detectGridBox,
     estimateGridScale,
@@ -233,6 +290,7 @@ if (typeof module !== "undefined" && module.exports) {
 
 if (typeof window !== "undefined") {
   window.EcgDigitize = {
+    normalizeColors,
     estimateQuality,
     detectGridBox,
     estimateGridScale,

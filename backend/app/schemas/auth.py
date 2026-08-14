@@ -25,6 +25,7 @@ class UserOut(BaseModel):
     username: str
     email: EmailStr
     role: UserRole
+    hospital_id: UUID | None = None
     created_at: datetime
 
 

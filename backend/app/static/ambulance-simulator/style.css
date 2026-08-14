@@ -142,6 +142,41 @@ h2::after {
 button.toggled { background: var(--red) !important; }
 .hint.sync-ok { color: var(--green-strong); }
 
+.sync-anim {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--amber);
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+.acuity-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.badge.acuity-high { background: #fecaca; color: #b91c1c; }
+.badge.acuity-medium { background: var(--amber-soft); color: var(--amber); }
+.badge.acuity-low { background: var(--green-soft); color: var(--green-strong); }
+
+.priority-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.priority-box #priority-high { color: #b91c1c; }
+.priority-box #priority-normal { color: var(--green-strong); }
+
 .row-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
 label { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--muted); gap: 5px; font-weight: 600; }
 

@@ -22,6 +22,7 @@ from ..schemas.hospital import HospitalOut
 from ..schemas.patient import PatientOut
 from .device import validate_owned_device
 from .eta import case_eta_minutes, case_eta_minutes_from_point
+from .risk import latest_risk_event_by_case, risk_snapshot
 from .routing import recommend_hospital
 
 _LOAD_DETAILS = (
@@ -68,6 +69,8 @@ def create_case(db: Session, payload: CaseCreate, user: User) -> EmergencyCase:
         ambulance_id=ambulance.id,
         chief_complaint=payload.chief_complaint,
         severity=payload.severity,
+        gcs=payload.gcs,
+        medications=payload.medications,
         status=CaseStatus.active,
         created_by_id=user.id,
         device_id=device.id if device else None,
@@ -151,8 +154,19 @@ def _serialize_recommendation(
     )
 
 
-def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> CaseOut:
-    """Build a CaseOut, computing the prototype ETA when a destination + fix exist."""
+_UNSET_RISK = object()
+
+
+def serialize_case(
+    db: Session,
+    case: EmergencyCase,
+    eta: int | None = None,
+    latest_risk: dict | object = _UNSET_RISK,
+) -> CaseOut:
+    """Build a CaseOut, computing the prototype ETA when a destination + fix
+    exist. ``latest_risk`` is derived only from the persisted ``risk_changed``
+    event: the bulk path passes it in (single query), single-case callers get
+    it resolved here (one extra query, still no recomputation)."""
     return CaseOut(
         id=case.id,
         patient_id=case.patient_id,
@@ -161,6 +175,8 @@ def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> 
         severity=case.severity,
         status=case.status,
         chief_complaint=case.chief_complaint,
+        gcs=case.gcs,
+        medications=case.medications,
         created_by_id=case.created_by_id,
         created_at=case.created_at,
         closed_at=case.closed_at,
@@ -184,19 +200,39 @@ def serialize_case(db: Session, case: EmergencyCase, eta: int | None = None) -> 
         ),
         recommendation=_serialize_recommendation(db, case),
         eta_minutes=eta if eta is not None else case_eta_minutes(db, case),
+        latest_risk=_resolve_latest_risk(db, case, latest_risk),
     )
 
 
+def _resolve_latest_risk(
+    db: Session, case: EmergencyCase, latest_risk: dict | object
+) -> dict | None:
+    if latest_risk is _UNSET_RISK:
+        event = latest_risk_event_by_case(db, [case.id]).get(case.id)
+        return risk_snapshot(event.payload) if event is not None else None
+    return latest_risk
+
+
 def serialize_cases(db: Session, cases: list[EmergencyCase]) -> list[CaseOut]:
-    """Bulk serialization with a single latest-GPS query for the ETA column."""
-    gps_by_case = _latest_gps_by_case(db, [case.id for case in cases])
+    """Bulk serialization with single latest-GPS and latest-risk queries."""
+    case_ids = [case.id for case in cases]
+    gps_by_case = _latest_gps_by_case(db, case_ids)
+    risk_by_case = latest_risk_event_by_case(db, case_ids)
     result: list[CaseOut] = []
     for case in cases:
         point = gps_by_case.get(case.id)
         eta = None
         if point is not None or case.hospital is not None:
             eta = case_eta_minutes_from_point(db, case, point)
-        result.append(serialize_case(db, case, eta=eta))
+        event = risk_by_case.get(case.id)
+        result.append(
+            serialize_case(
+                db,
+                case,
+                eta=eta,
+                latest_risk=risk_snapshot(event.payload) if event else None,
+            )
+        )
     return result
 
 
